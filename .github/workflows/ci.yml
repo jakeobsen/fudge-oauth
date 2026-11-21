@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: [mainline]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version: "1.26"
+          check-latest: true
+
+      - name: Lint
+        run: make lint
+
+      - name: Test
+        run: make test
+
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Build the image
+        run: docker build --tag fudge-oauth:ci .
+
+      - name: Start it and check it answers
+        run: |
+          key="$(openssl rand -base64 32)"
+          docker run -d --name relay -p 127.0.0.1:8080:8080 \
+            -e FUDGE_OAUTH_PUBLIC_URL=https://oauth.example.com \
+            -e FUDGE_OAUTH_KEY="$key" \
+            -e FUDGE_OAUTH_GITHUB_CLIENT_ID=ci \
+            -e FUDGE_OAUTH_GITHUB_CLIENT_SECRET=ci \
+            fudge-oauth:ci
+          for _ in $(seq 20); do curl -fsS http://127.0.0.1:8080/healthz && break; sleep 1; done
+          curl -fsS http://127.0.0.1:8080/ | grep -q 'https://oauth.example.com/github/callback'
+          docker exec relay /fudge-oauth healthcheck
+          docker logs relay

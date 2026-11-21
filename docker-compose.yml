@@ -1,0 +1,24 @@
+# An example: fudge-oauth with its config and secrets as files.
+# Put a TLS-terminating proxy in front of it, at the config's public_url.
+services:
+  fudge-oauth:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8080:8080"
+    environment:
+      FUDGE_OAUTH_CONFIG: /config/fudge-oauth.yaml
+    volumes:
+      - ./fudge-oauth.yaml:/config/fudge-oauth.yaml:ro
+    secrets:
+      - fudge_oauth_key
+      - github_client_secret
+      - linear_client_secret
+
+secrets:
+  fudge_oauth_key:
+    file: ./secrets/key
+  github_client_secret:
+    file: ./secrets/github_client_secret
+  linear_client_secret:
+    file: ./secrets/linear_client_secret

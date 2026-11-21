@@ -1,0 +1,221 @@
+package config
+
+import (
+	"errors"
+	"io/fs"
+	"strings"
+	"testing"
+)
+
+const testKey = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=" // bytes 0…31
+
+type fakeEnv struct {
+	vars  map[string]string
+	files map[string]string
+}
+
+func (f fakeEnv) getenv(k string) string { return f.vars[k] }
+
+func (f fakeEnv) readFile(p string) ([]byte, error) {
+	if s, ok := f.files[p]; ok {
+		return []byte(s), nil
+	}
+	return nil, &fs.PathError{Op: "open", Path: p, Err: fs.ErrNotExist}
+}
+
+func load(t *testing.T, vars, files map[string]string) (*Config, error) {
+	t.Helper()
+	e := fakeEnv{vars: vars, files: files}
+	return Load(e.getenv, e.readFile)
+}
+
+func TestFromFile(t *testing.T) {
+	cfg, err := load(t,
+		map[string]string{"FUDGE_OAUTH_CONFIG": "/c.yaml"},
+		map[string]string{
+			"/c.yaml": `
+public_url: https://oauth.example.com/
+key_file: /run/secrets/key
+providers:
+  github:
+    client_id: gh-id
+    client_secret_file: /run/secrets/github
+  jira:
+    client_id: jira-id
+    client_secret: jira-secret
+    authorize_url: https://auth.example.com/authorize?audience=api.example.com
+    pkce: true
+`,
+			"/run/secrets/key":    testKey + "\n",
+			"/run/secrets/github": "gh-secret\n",
+		})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Listen != ":8080" {
+		t.Errorf("Listen = %q", cfg.Listen)
+	}
+	if cfg.PublicURL != "https://oauth.example.com" {
+		t.Errorf("PublicURL = %q", cfg.PublicURL)
+	}
+	if len(cfg.Key) != 32 || cfg.Key[31] != 31 {
+		t.Errorf("Key = %v", cfg.Key)
+	}
+	if got := strings.Join(cfg.Names(), ","); got != "github,jira" {
+		t.Errorf("Names = %s", got)
+	}
+	gh := cfg.Providers["github"]
+	if gh.ClientID != "gh-id" || gh.ClientSecret != "gh-secret" || gh.TokenURL != "https://github.com/login/oauth/access_token" || !gh.PKCE {
+		t.Errorf("github = %+v", gh)
+	}
+	jira := cfg.Providers["jira"]
+	if jira.AuthorizeURL != "https://auth.example.com/authorize?audience=api.example.com" || !jira.PKCE || jira.ClientSecret != "jira-secret" {
+		t.Errorf("jira = %+v", jira)
+	}
+	if got := cfg.CallbackURL("github"); got != "https://oauth.example.com/github/callback" {
+		t.Errorf("CallbackURL = %s", got)
+	}
+}
+
+func TestEnvironmentOnly(t *testing.T) {
+	cfg, err := load(t, map[string]string{
+		"FUDGE_OAUTH_LISTEN":                    "127.0.0.1:9000",
+		"FUDGE_OAUTH_PUBLIC_URL":                "http://localhost:9000",
+		"FUDGE_OAUTH_KEY":                       strings.TrimRight(testKey, "="),
+		"FUDGE_OAUTH_LINEAR_CLIENT_ID":          "lin-id",
+		"FUDGE_OAUTH_LINEAR_CLIENT_SECRET_FILE": "/s",
+		"FUDGE_OAUTH_LINEAR_PKCE":               "false",
+	}, map[string]string{"/s": "lin-secret"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Listen != "127.0.0.1:9000" || cfg.PublicURL != "http://localhost:9000" {
+		t.Errorf("cfg = %+v", cfg)
+	}
+	lin := cfg.Providers["linear"]
+	if lin.ClientID != "lin-id" || lin.ClientSecret != "lin-secret" || lin.PKCE {
+		t.Errorf("linear = %+v", lin)
+	}
+}
+
+func TestEnvironmentOverridesFile(t *testing.T) {
+	cfg, err := load(t, map[string]string{
+		"FUDGE_OAUTH_CONFIG":               "/c.yaml",
+		"FUDGE_OAUTH_PUBLIC_URL":           "https://other.example.com",
+		"FUDGE_OAUTH_GITHUB_CLIENT_ID":     "env-id",
+		"FUDGE_OAUTH_SLACK_CLIENT_ID":      "slack-id",
+		"FUDGE_OAUTH_SLACK_CLIENT_SECRET":  "slack-secret",
+		"FUDGE_OAUTH_SLACK_TOKEN_URL":      "https://slack.example.com/token",
+		"FUDGE_OAUTH_GITHUB_AUTHORIZE_URL": "https://ghe.example.com/login/oauth/authorize",
+	}, map[string]string{"/c.yaml": `
+public_url: https://oauth.example.com
+key: ` + testKey + `
+providers:
+  github: {client_id: file-id, client_secret: file-secret}
+`})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.PublicURL != "https://other.example.com" {
+		t.Errorf("PublicURL = %q", cfg.PublicURL)
+	}
+	gh := cfg.Providers["github"]
+	if gh.ClientID != "env-id" || gh.ClientSecret != "file-secret" || gh.AuthorizeURL != "https://ghe.example.com/login/oauth/authorize" {
+		t.Errorf("github = %+v", gh)
+	}
+	if s := cfg.Providers["slack"]; s.TokenURL != "https://slack.example.com/token" || s.ClientSecret != "slack-secret" {
+		t.Errorf("slack = %+v", s)
+	}
+}
+
+func TestRefused(t *testing.T) {
+	good := map[string]string{
+		"FUDGE_OAUTH_PUBLIC_URL":           "https://oauth.example.com",
+		"FUDGE_OAUTH_KEY":                  testKey,
+		"FUDGE_OAUTH_GITHUB_CLIENT_ID":     "id",
+		"FUDGE_OAUTH_GITHUB_CLIENT_SECRET": "secret",
+	}
+	with := func(changes map[string]string) map[string]string {
+		m := map[string]string{}
+		for k, v := range good {
+			m[k] = v
+		}
+		for k, v := range changes {
+			if v == "" {
+				delete(m, k)
+			} else {
+				m[k] = v
+			}
+		}
+		return m
+	}
+	if _, err := load(t, good, nil); err != nil {
+		t.Fatalf("the good config: %v", err)
+	}
+
+	cases := []struct {
+		name  string
+		vars  map[string]string
+		files map[string]string
+		want  string
+	}{
+		{"no public URL", with(map[string]string{"FUDGE_OAUTH_PUBLIC_URL": ""}), nil, "public_url: missing"},
+		{"plain http", with(map[string]string{"FUDGE_OAUTH_PUBLIC_URL": "http://oauth.example.com"}), nil, "must use https"},
+		{"a relative URL", with(map[string]string{"FUDGE_OAUTH_PUBLIC_URL": "/oauth"}), nil, "absolute URL"},
+		{"a query", with(map[string]string{"FUDGE_OAUTH_PUBLIC_URL": "https://oauth.example.com/?a=b"}), nil, "no user, query"},
+		{"another scheme", with(map[string]string{"FUDGE_OAUTH_PUBLIC_URL": "ftp://oauth.example.com"}), nil, "must use https"},
+		{"no key", with(map[string]string{"FUDGE_OAUTH_KEY": ""}), nil, "key: missing"},
+		{"a short key", with(map[string]string{"FUDGE_OAUTH_KEY": "c2hvcnQ="}), nil, "32 random bytes"},
+		{"a key that isn't base64", with(map[string]string{"FUDGE_OAUTH_KEY": "not base64!"}), nil, "32 random bytes"},
+		{"key and key_file", with(map[string]string{"FUDGE_OAUTH_KEY_FILE": "/k"}), map[string]string{"/k": testKey}, "both set"},
+		{"a missing secret file", with(map[string]string{"FUDGE_OAUTH_GITHUB_CLIENT_SECRET": "", "FUDGE_OAUTH_GITHUB_CLIENT_SECRET_FILE": "/nope"}), nil, "client_secret_file"},
+		{"no secret", with(map[string]string{"FUDGE_OAUTH_GITHUB_CLIENT_SECRET": ""}), nil, "providers.github: client_secret"},
+		{"no client ID", with(map[string]string{"FUDGE_OAUTH_GITHUB_CLIENT_ID": ""}), nil, "providers.github: client_id is missing"},
+		{"no providers", with(map[string]string{"FUDGE_OAUTH_GITHUB_CLIENT_ID": "", "FUDGE_OAUTH_GITHUB_CLIENT_SECRET": ""}), nil, "none configured"},
+		{"an http token URL", with(map[string]string{"FUDGE_OAUTH_GITHUB_TOKEN_URL": "http://github.example.com/token"}), nil, "token_url"},
+		{"a bad PKCE value", with(map[string]string{"FUDGE_OAUTH_GITHUB_PKCE": "maybe"}), nil, "PKCE"},
+		{"a missing config file", with(map[string]string{"FUDGE_OAUTH_CONFIG": "/nope.yaml"}), nil, "reading the config file"},
+		{"an unknown field", with(map[string]string{"FUDGE_OAUTH_CONFIG": "/c.yaml"}), map[string]string{"/c.yaml": "public_ur: x\n"}, "public_ur"},
+		{"an unknown provider", with(map[string]string{"FUDGE_OAUTH_CONFIG": "/c.yaml"}), map[string]string{"/c.yaml": "providers:\n  gitlab: {client_id: a}\n"}, `unknown provider "gitlab"`},
+		{"an empty provider entry", with(map[string]string{"FUDGE_OAUTH_CONFIG": "/c.yaml"}), map[string]string{"/c.yaml": "providers:\n  zoom:\n"}, "providers.zoom: client_id is missing"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			_, err := load(t, c.vars, c.files)
+			if err == nil {
+				t.Fatal("accepted")
+			}
+			if !strings.Contains(err.Error(), c.want) {
+				t.Fatalf("error %q doesn't say %q", err, c.want)
+			}
+		})
+	}
+}
+
+func TestEmptyFile(t *testing.T) {
+	_, err := load(t, map[string]string{
+		"FUDGE_OAUTH_CONFIG":             "/c.yaml",
+		"FUDGE_OAUTH_PUBLIC_URL":         "https://oauth.example.com",
+		"FUDGE_OAUTH_KEY":                testKey,
+		"FUDGE_OAUTH_ZOOM_CLIENT_ID":     "id",
+		"FUDGE_OAUTH_ZOOM_CLIENT_SECRET": "secret",
+	}, map[string]string{"/c.yaml": ""})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestErrorsNeverShowSecrets(t *testing.T) {
+	_, err := load(t, map[string]string{
+		"FUDGE_OAUTH_PUBLIC_URL":           "https://oauth.example.com",
+		"FUDGE_OAUTH_KEY":                  "TOP-SECRET-KEY",
+		"FUDGE_OAUTH_GITHUB_CLIENT_ID":     "id",
+		"FUDGE_OAUTH_GITHUB_CLIENT_SECRET": "TOP-SECRET-CLIENT",
+	}, nil)
+	if err == nil || strings.Contains(err.Error(), "TOP-SECRET") {
+		t.Fatalf("err = %v", err)
+	}
+	if errors.Unwrap(err) != nil && strings.Contains(errors.Unwrap(err).Error(), "TOP-SECRET") {
+		t.Fatal("the wrapped error shows the key")
+	}
+}
