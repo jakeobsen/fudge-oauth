@@ -1,0 +1,27 @@
+# fudge-oauth's configuration. Copy it to fudge-oauth.yaml and point
+# FUDGE_OAUTH_CONFIG at it. Every value can also come from an environment
+# variable (see the README), which overrides the file.
+
+# Where browsers and Fudge reach the relay. Register
+# <public_url>/<provider>/callback with each provider.
+public_url: https://oauth.example.com
+
+# 32 random bytes in base64 (`openssl rand -base64 32`), or key_file.
+key_file: /run/secrets/fudge_oauth_key
+
+# listen: ":8080"
+
+# Configure only the providers you offer; each needs a client ID and secret
+# (client_secret, or client_secret_file).
+providers:
+  github:
+    client_id: your-github-client-id
+    client_secret_file: /run/secrets/github_client_secret
+  linear:
+    client_id: your-linear-client-id
+    client_secret_file: /run/secrets/linear_client_secret
+  # slack:
+  #   client_id: …
+  #   client_secret_file: /run/secrets/slack_client_secret
+  # Optional for any provider: authorize_url, token_url (e.g. GitHub
+  # Enterprise Server), and pkce: true or false.
