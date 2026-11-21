@@ -80,12 +80,14 @@ A YAML file, whose path is in `FUDGE_OAUTH_CONFIG`, and environment variables. A
 
 fudge-oauth answers at the same paths as Raycast's sign-in servers, and Fudge sends extensions' sign-ins there:
 
-1. `GET /<path>/authorize`: Fudge opens this in the browser, with a PKCE challenge and a redirect back to Fudge on `127.0.0.1` or `[::1]` (nothing else is accepted). fudge-oauth seals those into the `state` and sends the browser to the service with its own client ID.
+1. `GET /<path>/authorize`: Fudge opens this in the browser, with a PKCE challenge and a redirect back to Fudge on `127.0.0.1` or `[::1]` (nothing else is accepted). fudge-oauth seals those into the `state` and sends the browser to the service with its own client ID. Where the service supports PKCE, fudge-oauth uses its own verifier with it, which rides inside the sealed state and code.
 2. `GET /<path>/callback`: the service comes back here. fudge-oauth seals the service's code, and sends the browser back to Fudge with it.
 3. `POST /<path>/token`: Fudge exchanges that code, proving with the PKCE verifier that it started the sign-in. fudge-oauth exchanges the service's code with its secret and returns the tokens.
-4. `POST /<path>/refresh-token`: refreshes a token the same way. GitHub's OAuth apps issue no refresh tokens, so GitHub answers 400.
+4. `POST /<path>/refresh-token`: refreshes a token the same way. `/token` takes a refresh too, since that's where Google, Jira and Zoom refresh. GitHub's OAuth apps issue no refresh tokens, so GitHub answers 400.
 
-A sealed state lasts 10 minutes, a sealed code 5. `GET /healthz` answers 200.
+Sealed values are bound to their kind and service: a state never works as a code, nor at another service's paths. A sealed state lasts 10 minutes, a sealed code 5. `GET /healthz` answers 200.
+
+Anyone holding a refresh token can refresh it through fudge-oauth, as with any OAuth proxy; rate limiting, if you want it, belongs in the proxy in front.
 
 Logs are JSON lines on standard output, one per request: the path, the service, the status and the time.
 

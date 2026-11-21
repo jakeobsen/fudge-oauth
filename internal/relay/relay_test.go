@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -215,6 +216,9 @@ func TestSignInWithEveryProvider(t *testing.T) {
 				if status != http.StatusOK {
 					t.Fatalf("token: %d %v", status, body)
 				}
+				if want := fp.lastAnswer(); !reflect.DeepEqual(body, want) {
+					t.Fatalf("token: the provider's answer changed on the way:\n got %v\nwant %v", body, want)
+				}
 				access := accessTokenFor(name, body)
 				if !strings.HasPrefix(access, "ACCESS-TOKEN-"+name) {
 					t.Fatalf("token: no access token where OAuthService reads it: %v", body)
@@ -237,12 +241,24 @@ func TestSignInWithEveryProvider(t *testing.T) {
 				if name == "slack" {
 					refresh, _ = body["authed_user"].(map[string]any)["refresh_token"].(string)
 				}
-				status, body = h.post(t, "/"+name+"/refresh-token", enc, refreshFields(refresh))
-				if status != http.StatusOK {
-					t.Fatalf("refresh: %d %v", status, body)
-				}
-				if got, _ := body["access_token"].(string); !strings.HasPrefix(got, "ACCESS-TOKEN-"+name) || got == access {
-					t.Fatalf("refresh: access_token %q", got)
+				// OAuthService refreshes at /refresh-token, or at the token URL
+				// for Google, Jira and Zoom; both work.
+				for _, path := range []string{"/refresh-token", "/token"} {
+					status, body = h.post(t, "/"+name+path, enc, refreshFields(refresh))
+					if status != http.StatusOK {
+						t.Fatalf("refresh at %s: %d %v", path, status, body)
+					}
+					if want := fp.lastAnswer(); !reflect.DeepEqual(body, want) {
+						t.Fatalf("refresh at %s: the provider's answer changed:\n got %v\nwant %v", path, body, want)
+					}
+					got, _ := body["access_token"].(string)
+					if !strings.HasPrefix(got, "ACCESS-TOKEN-"+name) || got == access {
+						t.Fatalf("refresh at %s: access_token %q", path, got)
+					}
+					access = got
+					if next, ok := body["refresh_token"].(string); ok {
+						refresh = next
+					}
 				}
 			})
 		}
@@ -292,6 +308,18 @@ func TestLoopbackRedirect(t *testing.T) {
 		"raycast://oauth?package_name=x",
 		"https://raycast.com/redirect?packageName=x",
 		"http:127.0.0.1:53682",
+		"http://127.0.0.1@evil.com/",
+		"http://127.0.0.1:53682@evil.com:53682/",
+		"http://127.0.0.1.evil.com/",
+		"http://evil.com/#@127.0.0.1",
+		"http://evil.com:53682/#@127.0.0.1:53682",
+		"https://127.0.0.1/",
+		"http://localhost/",
+		"javascript:alert(1)",
+		"http://0x7f000001:53682/cb",
+		"http://2130706433:53682/cb",
+		"http://[::ffff:127.0.0.1]:53682/cb",
+		" http://127.0.0.1:53682/cb",
 	}
 	for _, s := range good {
 		if !LoopbackRedirect(s) {
@@ -333,6 +361,49 @@ func TestAuthorizeRefuses(t *testing.T) {
 	}
 	if h.providers["github"].seen() != nil {
 		t.Fatal("a refused sign-in reached the provider")
+	}
+}
+
+// A link can't override what the relay sends the provider: its client ID and
+// callback, the state, the response type and the PKCE parameters.
+func TestOwnParametersCantBeOverridden(t *testing.T) {
+	h := newHarness(t, "github", "slack")
+	for _, name := range []string{"github", "slack"} {
+		si := h.newSignIn(t)
+		u := h.authorizeURL(name, si, nil) + "&" + url.Values{
+			"client_id":             {"evil-client"},
+			"redirect_uri":          {"https://evil.example/cb"},
+			"state":                 {"evil-state"},
+			"response_type":         {"token"},
+			"code_challenge":        {s256("evil-verifier-evil-verifier-evil-verifier-1")},
+			"code_challenge_method": {"plain"},
+			"scope":                 {"admin"},
+		}.Encode()
+		toProvider := location(t, h.get(t, u))
+		h.get(t, toProvider.String())
+		seen := h.providers[name].seen()
+		for _, k := range []string{"client_id", "redirect_uri", "state", "response_type", "code_challenge", "code_challenge_method", "scope"} {
+			if len(seen[k]) > 1 {
+				t.Errorf("%s: %s reached the provider %d times: %v", name, k, len(seen[k]), seen[k])
+			}
+		}
+		if seen.Get("client_id") != "relay-id-"+name || seen.Get("response_type") != "code" ||
+			!strings.HasSuffix(seen.Get("redirect_uri"), "/"+name+"/callback") || seen.Get("state") == "evil-state" {
+			t.Errorf("%s: the provider saw %v", name, seen)
+		}
+		switch name {
+		case "github": // PKCE: the relay's own challenge
+			if c := seen.Get("code_challenge"); c == s256(si.verifier) || c == s256("evil-verifier-evil-verifier-evil-verifier-1") || seen.Get("code_challenge_method") != "S256" {
+				t.Errorf("github: challenge %q method %q", c, seen.Get("code_challenge_method"))
+			}
+			if seen.Get("scope") != extensions["github"].scope {
+				t.Errorf("github: scope %q", seen.Get("scope"))
+			}
+		case "slack": // no PKCE: none at all
+			if seen.Has("code_challenge") || seen.Has("code_challenge_method") {
+				t.Errorf("slack: PKCE parameters reached it: %v", seen)
+			}
+		}
 	}
 }
 
@@ -426,14 +497,16 @@ func TestTokenRefuses(t *testing.T) {
 		{"a wrong verifier", "/github/token", exchangeFields(code, randomVerifier(t)), 400, "invalid_grant", "code_verifier"},
 		{"no verifier", "/github/token", exchangeFields(code, ""), 400, "invalid_grant", "code_verifier"},
 		{"a short verifier", "/github/token", exchangeFields(code, "abc"), 400, "invalid_grant", "code_verifier"},
-		{"another provider", "/linear/token", exchangeFields(code, si.verifier), 400, "invalid_grant", "another provider"},
+		{"another provider", "/linear/token", exchangeFields(code, si.verifier), 400, "invalid_grant", "isn't valid"},
 		{"a tampered code", "/github/token", exchangeFields(string(tampered), si.verifier), 400, "invalid_grant", "isn't valid"},
 		{"the provider's raw code", "/github/token", exchangeFields("PROVIDER-CODE-github-1", si.verifier), 400, "invalid_grant", "isn't valid"},
 		{"a sealed state as the code", "/github/token", exchangeFields(sealedState, si.verifier), 400, "invalid_grant", "isn't valid"},
 		{"another redirect_uri", "/github/token", [][2]string{
 			{"code", code}, {"code_verifier", si.verifier}, {"grant_type", "authorization_code"}, {"redirect_uri", "http://127.0.0.1:1/other"},
 		}, 400, "invalid_grant", "redirect_uri"},
-		{"a refresh grant", "/github/token", [][2]string{{"code", code}, {"code_verifier", si.verifier}, {"grant_type", "refresh_token"}}, 400, "unsupported_grant_type", "authorization_code"},
+		{"a refresh grant for GitHub", "/github/token", refreshFields("x"), 400, "unsupported_grant_type", "GitHub doesn't issue refresh tokens"},
+		{"a password grant", "/github/token", [][2]string{{"grant_type", "password"}, {"username", "a"}, {"password", "b"}}, 400, "unsupported_grant_type", "authorization_code or refresh_token"},
+		{"a code at refresh-token", "/linear/refresh-token", exchangeFields(code, si.verifier), 400, "unsupported_grant_type", "refresh_token"},
 		{"an unconfigured provider", "/zoom/token", exchangeFields(code, si.verifier), 404, "invalid_request", "doesn't offer Zoom"},
 	}
 	for _, c := range cases {

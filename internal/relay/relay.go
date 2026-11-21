@@ -30,8 +30,8 @@ const (
 	// CodeLifetime is how long Fudge has to exchange the code it was given.
 	CodeLifetime = 5 * time.Minute
 
-	purposeState = "state"
-	purposeCode  = "code"
+	kindState = "state"
+	kindCode  = "code"
 
 	maxParamLen = 2048
 )
@@ -106,6 +106,11 @@ func secured(next http.Handler) http.Handler {
 
 // --- authorize ---
 
+// purpose binds a sealed value to its kind and provider, as the sealing's
+// additional data: a sealed state never opens as a code, and neither opens
+// at another provider's endpoints.
+func purpose(kind, provider string) string { return kind + "/" + provider }
+
 // statePayload is what the provider carries for the relay as its state.
 type statePayload struct {
 	Provider    string `json:"p"`
@@ -160,7 +165,7 @@ func (s *Server) authorize(w http.ResponseWriter, r *http.Request) {
 	if p.PKCE {
 		payload.Verifier = newVerifier()
 	}
-	sealed, err := s.sealer.Seal(purposeState, payload, s.now().Add(StateLifetime))
+	sealed, err := s.sealer.Seal(purpose(kindState, p.Name), payload, s.now().Add(StateLifetime))
 	if err != nil {
 		s.log.Error("sealing the state failed", "provider", p.Name)
 		s.page(w, http.StatusInternalServerError, "Can't sign in", "Something went wrong on the sign-in server. Try again.")
@@ -229,7 +234,7 @@ func (s *Server) callback(w http.ResponseWriter, r *http.Request) {
 	}
 	q := r.URL.Query()
 	var st statePayload
-	if err := s.sealer.Open(purposeState, q.Get("state"), s.now(), &st); err != nil || st.Provider != p.Name {
+	if err := s.sealer.Open(purpose(kindState, p.Name), q.Get("state"), s.now(), &st); err != nil || st.Provider != p.Name {
 		msg := "This sign-in link isn't valid. Start signing in again from Fudge."
 		if errors.Is(err, seal.ErrExpired) {
 			msg = "This sign-in took too long. Start signing in again from Fudge."
@@ -255,7 +260,7 @@ func (s *Server) callback(w http.ResponseWriter, r *http.Request) {
 		params.Set("error", "invalid_request")
 		params.Set("error_description", p.Title+" sent no code back.")
 	default:
-		sealed, err := s.sealer.Seal(purposeCode, codePayload{
+		sealed, err := s.sealer.Seal(purpose(kindCode, p.Name), codePayload{
 			Provider:    p.Name,
 			Code:        code,
 			RedirectURI: st.RedirectURI,
@@ -283,21 +288,48 @@ func clip(s string) string {
 
 // --- token and refresh-token ---
 
-func (s *Server) token(w http.ResponseWriter, r *http.Request) {
+// tokenRequest reads a POST to /token or /refresh-token for a configured provider.
+func (s *Server) tokenRequest(w http.ResponseWriter, r *http.Request) (config.Provider, map[string]string, bool) {
 	p, ok := s.providerJSON(w, r)
 	if !ok {
-		return
+		return p, nil, false
 	}
 	form, ok := readForm(w, r)
+	return p, form, ok
+}
+
+// token redeems a code. It refreshes too, since OAuthService refreshes Google,
+// Jira and Zoom at their token URL.
+func (s *Server) token(w http.ResponseWriter, r *http.Request) {
+	p, form, ok := s.tokenRequest(w, r)
 	if !ok {
 		return
 	}
-	if form["grant_type"] != "authorization_code" {
-		writeError(w, http.StatusBadRequest, "unsupported_grant_type", "grant_type must be authorization_code.")
+	switch form["grant_type"] {
+	case "authorization_code":
+		s.redeem(w, r, p, form)
+	case "refresh_token":
+		s.refreshGrant(w, r, p, form)
+	default:
+		writeError(w, http.StatusBadRequest, "unsupported_grant_type", "grant_type must be authorization_code or refresh_token.")
+	}
+}
+
+func (s *Server) refresh(w http.ResponseWriter, r *http.Request) {
+	p, form, ok := s.tokenRequest(w, r)
+	if !ok {
 		return
 	}
+	if form["grant_type"] != "refresh_token" {
+		writeError(w, http.StatusBadRequest, "unsupported_grant_type", "grant_type must be refresh_token.")
+		return
+	}
+	s.refreshGrant(w, r, p, form)
+}
+
+func (s *Server) redeem(w http.ResponseWriter, r *http.Request, p config.Provider, form map[string]string) {
 	var c codePayload
-	if err := s.sealer.Open(purposeCode, form["code"], s.now(), &c); err != nil {
+	if err := s.sealer.Open(purpose(kindCode, p.Name), form["code"], s.now(), &c); err != nil {
 		msg := "The code isn't valid. Sign in again."
 		if errors.Is(err, seal.ErrExpired) {
 			msg = "The code has expired. Sign in again."
@@ -305,8 +337,8 @@ func (s *Server) token(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_grant", msg)
 		return
 	}
-	if c.Provider != p.Name {
-		writeError(w, http.StatusBadRequest, "invalid_grant", "The code is for another provider.")
+	if c.Provider != p.Name { // already bound by purpose; checked again in case that ever changes
+		writeError(w, http.StatusBadRequest, "invalid_grant", "The code isn't valid. Sign in again.")
 		return
 	}
 	if ru := form["redirect_uri"]; ru != "" && ru != c.RedirectURI {
@@ -330,19 +362,7 @@ func (s *Server) token(w http.ResponseWriter, r *http.Request) {
 	s.exchange(w, r, p, params)
 }
 
-func (s *Server) refresh(w http.ResponseWriter, r *http.Request) {
-	p, ok := s.providerJSON(w, r)
-	if !ok {
-		return
-	}
-	form, ok := readForm(w, r)
-	if !ok {
-		return
-	}
-	if form["grant_type"] != "refresh_token" {
-		writeError(w, http.StatusBadRequest, "unsupported_grant_type", "grant_type must be refresh_token.")
-		return
-	}
+func (s *Server) refreshGrant(w http.ResponseWriter, r *http.Request, p config.Provider, form map[string]string) {
 	if !p.Refresh {
 		writeError(w, http.StatusBadRequest, "unsupported_grant_type", p.Title+" doesn't issue refresh tokens, so there's nothing to refresh. Sign in again.")
 		return

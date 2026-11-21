@@ -184,6 +184,20 @@ type fakeProvider struct {
 	issued        int
 	// refuse makes the token endpoint answer like this instead, when set.
 	refuse func(w http.ResponseWriter)
+	// last is the token endpoint's last answer.
+	last map[string]any
+}
+
+// lastAnswer is the token endpoint's last answer, as JSON decodes it.
+func (fp *fakeProvider) lastAnswer() map[string]any {
+	fp.mu.Lock()
+	b, _ := json.Marshal(fp.last)
+	fp.mu.Unlock()
+	dec := json.NewDecoder(bytes.NewReader(b))
+	dec.UseNumber()
+	var obj map[string]any
+	_ = dec.Decode(&obj)
+	return obj
 }
 
 func (fp *fakeProvider) seen() url.Values {
@@ -321,7 +335,8 @@ func (fp *fakeProvider) token(w http.ResponseWriter, r *http.Request) {
 		if fp.def.Refresh {
 			fp.refreshTokens[refresh] = true
 		}
-		writeShape(w, name, codeShape(name, access, refresh))
+		fp.last = codeShape(name, access, refresh)
+		writeShape(w, name, fp.last)
 	case "refresh_token":
 		if !fp.def.Refresh {
 			t.Errorf("%s token: the relay asked to refresh a provider without refresh tokens", name)
@@ -331,7 +346,8 @@ func (fp *fakeProvider) token(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		fp.refreshTokens[refresh] = true
-		writeShape(w, name, refreshShape(name, access, refresh))
+		fp.last = refreshShape(name, access, refresh)
+		writeShape(w, name, fp.last)
 	default:
 		t.Errorf("%s token: grant_type %q", name, form["grant_type"])
 		providerRefusal(w, name, "unsupported_grant_type", "")
