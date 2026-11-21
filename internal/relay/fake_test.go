@@ -195,6 +195,20 @@ type fakeProvider struct {
 	refuse func(w http.ResponseWriter)
 	// last is the token endpoint's last answer.
 	last map[string]any
+	// wantCallback is the redirect_uri a code exchange must carry, when it isn't the relay's callback for this
+	// provider (a sign-in begun under a deprecated name).
+	wantCallback string
+}
+
+// issue makes a code the token endpoint accepts, as if the provider had sent the browser back with it.
+func (fp *fakeProvider) issue() string {
+	fp.mu.Lock()
+	defer fp.mu.Unlock()
+	fp.issued++
+	code := fmt.Sprintf("PROVIDER-CODE-%s-%d", fp.def.Name, fp.issued)
+	fp.codes[code] = true
+	fp.h.remember(code)
+	return code
 }
 
 // lastAnswer is the token endpoint's last answer, as JSON decodes it.
@@ -330,8 +344,12 @@ func (fp *fakeProvider) token(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		delete(fp.codes, form["code"])
-		if form["redirect_uri"] != fp.callback() {
-			t.Errorf("%s token: redirect_uri %q, want %q", name, form["redirect_uri"], fp.callback())
+		want := fp.callback()
+		if fp.wantCallback != "" {
+			want = fp.wantCallback
+		}
+		if form["redirect_uri"] != want {
+			t.Errorf("%s token: redirect_uri %q, want %q", name, form["redirect_uri"], want)
 		}
 		if fp.def.PKCE {
 			if s256(form["code_verifier"]) != fp.challenge {
@@ -403,7 +421,7 @@ func codeShape(name, access, refresh string) map[string]any {
 		return map[string]any{"access_token": access, "token_type": "bearer", "expires_in": 3600, "refresh_token": refresh, "data": map[string]any{"id": "1", "name": "A"}}
 	case "google":
 		return map[string]any{"access_token": access, "expires_in": 3599, "refresh_token": refresh, "scope": "https://www.googleapis.com/auth/drive.readonly", "token_type": "Bearer", "id_token": "eyJ.fake"}
-	case "jira":
+	case "atlassian":
 		return map[string]any{"access_token": access, "expires_in": 3600, "token_type": "Bearer", "refresh_token": refresh, "scope": "read:jira-work offline_access"}
 	case "zoom":
 		return map[string]any{"access_token": access, "token_type": "bearer", "refresh_token": refresh, "expires_in": 3599, "scope": "meeting:write"}

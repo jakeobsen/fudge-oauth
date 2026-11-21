@@ -1,6 +1,6 @@
 // Package provider holds the built-in OAuth providers: the seven that
 // @raycast/utils' OAuthService knows (GitHub, Linear, Slack, Asana, Google,
-// Jira and Zoom), and how the relay talks to each.
+// Atlassian for Jira and Confluence, and Zoom), and how the relay talks to each.
 package provider
 
 import "slices"
@@ -43,6 +43,9 @@ type Provider struct {
 	ClientAuth ClientAuth
 	// TokenBody is how token requests are encoded.
 	TokenBody BodyEncoding
+	// AuthorizeDefaults are authorize parameters the relay adds when the extension didn't send them, as
+	// Raycast's proxy does for the provider.
+	AuthorizeDefaults map[string]string
 	// Setup says where the provider's OAuth apps are registered, for the front page.
 	Setup string
 }
@@ -96,14 +99,18 @@ var Builtin = []Provider{
 		Setup:        "Google Cloud console → APIs & Services → Credentials → OAuth client ID (Web application) → Authorized redirect URIs",
 	},
 	{
-		Name:         "jira",
-		Title:        "Jira",
+		// One Atlassian app covers Jira and Confluence. Until v0.3.0 this was "jira", which stays an alias.
+		Name:         "atlassian",
+		Title:        "Atlassian (Jira, Confluence)",
 		AuthorizeURL: "https://auth.atlassian.com/authorize",
 		TokenURL:     "https://auth.atlassian.com/oauth/token",
 		PKCE:         false,
 		Refresh:      true,
 		TokenBody:    BodyJSON,
-		Setup:        "developer.atlassian.com → Developer console → your app → Authorization → OAuth 2.0 (3LO) → Callback URL",
+		// Atlassian's 3LO needs both. Raycast's Jira proxy adds them, so the Jira extension doesn't send them.
+		AuthorizeDefaults: map[string]string{"audience": "api.atlassian.com", "prompt": "consent"},
+		Setup: "developer.atlassian.com → Developer console → your app → Authorization → OAuth 2.0 (3LO) → Callback URL; " +
+			"Permissions → the Jira and Confluence API scopes your extensions ask for",
 	},
 	{
 		Name:         "zoom",
@@ -115,6 +122,30 @@ var Builtin = []Provider{
 		ClientAuth:   ClientAuthBasic,
 		Setup:        "Zoom App Marketplace → Develop → your app → OAuth Redirect URL and OAuth allow list",
 	},
+}
+
+// Aliases maps a deprecated path name to the provider it now stands for. They work for one release, and the
+// relay logs that they're deprecated.
+var Aliases = map[string]string{"jira": "atlassian"}
+
+// Canonical returns the provider name a path name stands for: an alias's provider, else the name itself.
+func Canonical(name string) string {
+	if canonical, ok := Aliases[name]; ok {
+		return canonical
+	}
+	return name
+}
+
+// AliasesOf lists the deprecated names that stand for name, sorted.
+func AliasesOf(name string) []string {
+	var aliases []string
+	for alias, canonical := range Aliases {
+		if canonical == name {
+			aliases = append(aliases, alias)
+		}
+	}
+	slices.Sort(aliases)
+	return aliases
 }
 
 // Lookup returns the built-in provider with this name.

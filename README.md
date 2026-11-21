@@ -17,10 +17,12 @@ The seven that `@raycast/utils`' `OAuthService` has built in:
 | Slack | `slack` | api.slack.com/apps → your app → OAuth & Permissions → Redirect URLs |
 | Asana | `asana` | Asana developer console → your app → OAuth → Redirect URLs |
 | Google | `google` | Google Cloud console → APIs & Services → Credentials → OAuth client ID (Web application) → Authorized redirect URIs |
-| Jira | `jira` | developer.atlassian.com → Developer console → your app → Authorization → OAuth 2.0 (3LO) → Callback URL |
+| Atlassian (Jira, Confluence) | `atlassian` | developer.atlassian.com → Developer console → your app → Authorization → OAuth 2.0 (3LO) → Callback URL; Permissions → the Jira and Confluence API scopes your extensions ask for |
 | Zoom | `zoom` | Zoom App Marketplace → Develop → your app → OAuth Redirect URL, and the OAuth allow list |
 
 Configure only the ones you want to offer.
+
+**Atlassian** covers Jira and Confluence with one app. fudge-oauth adds `audience=api.atlassian.com` and `prompt=consent` to its sign-ins when an extension doesn't send them, as Raycast's Jira server does. Until v0.3.0 its path was `jira`: `providers.jira`, `FUDGE_OAUTH_JIRA_*` and `/jira/…` still work for this release, with a note in the log at start, and a sign-in begun before the upgrade still completes. Register `<public_url>/atlassian/callback` as the app's callback URL; it's the one fudge-oauth sends, whichever path a sign-in starts at. Where both names are set, `atlassian` wins.
 
 ## Setting it up
 
@@ -113,7 +115,7 @@ fudge-oauth answers at the same paths as Raycast's sign-in servers, and Fudge se
 1. `GET /<path>/authorize`: Fudge opens this in the browser, with a PKCE challenge and a redirect back to Fudge on `127.0.0.1` or `[::1]` (nothing else is accepted). fudge-oauth seals those into the `state` and sends the browser to the service with its own client ID. Where the service supports PKCE, fudge-oauth uses its own verifier with it, which rides inside the sealed state and code.
 2. `GET /<path>/callback`: the service comes back here. fudge-oauth seals the service's code, and sends the browser back to Fudge with it.
 3. `POST /<path>/token`: Fudge exchanges that code, proving with the PKCE verifier that it started the sign-in. fudge-oauth exchanges the service's code with its secret and returns the tokens.
-4. `POST /<path>/refresh-token`: refreshes a token the same way. `/token` takes a refresh too, since that's where Google, Jira and Zoom refresh. GitHub's OAuth apps issue no refresh tokens, so GitHub answers 400.
+4. `POST /<path>/refresh-token`: refreshes a token the same way. `/token` takes a refresh too, since that's where Google, Atlassian and Zoom refresh. GitHub's OAuth apps issue no refresh tokens, so GitHub answers 400.
 
 Sealed values are bound to their kind and service: a state never works as a code, nor at another service's paths. A sealed state lasts 10 minutes, a sealed code 5. `GET /healthz` answers 200.
 

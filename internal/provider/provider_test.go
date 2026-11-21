@@ -7,7 +7,7 @@ import (
 )
 
 func TestBuiltin(t *testing.T) {
-	want := []string{"github", "linear", "slack", "asana", "google", "jira", "zoom"}
+	want := []string{"github", "linear", "slack", "asana", "google", "atlassian", "zoom"}
 	if got := Names(); !slices.Equal(got, want) {
 		t.Fatalf("Names() = %v, want OAuthService's seven: %v", got, want)
 	}
@@ -34,18 +34,18 @@ func TestBuiltin(t *testing.T) {
 // these defaults there; the relay talks to the same endpoints.
 func TestDirectProvidersMatchOAuthService(t *testing.T) {
 	for name, authorize := range map[string]string{
-		"google": "https://accounts.google.com/o/oauth2/v2/auth",
-		"jira":   "https://auth.atlassian.com/authorize",
-		"zoom":   "https://zoom.us/oauth/authorize",
+		"google":    "https://accounts.google.com/o/oauth2/v2/auth",
+		"atlassian": "https://auth.atlassian.com/authorize",
+		"zoom":      "https://zoom.us/oauth/authorize",
 	} {
 		if p, _ := Lookup(name); p.AuthorizeURL != authorize {
 			t.Errorf("%s: %q, want %q", name, p.AuthorizeURL, authorize)
 		}
 	}
 	for name, token := range map[string]string{
-		"google": "https://oauth2.googleapis.com/token",
-		"jira":   "https://auth.atlassian.com/oauth/token",
-		"zoom":   "https://zoom.us/oauth/token",
+		"google":    "https://oauth2.googleapis.com/token",
+		"atlassian": "https://auth.atlassian.com/oauth/token",
+		"zoom":      "https://zoom.us/oauth/token",
 	} {
 		if p, _ := Lookup(name); p.TokenURL != token {
 			t.Errorf("%s: %q, want %q", name, p.TokenURL, token)

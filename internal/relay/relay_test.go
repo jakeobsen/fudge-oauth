@@ -41,11 +41,11 @@ var extensions = map[string]extension{
 	"github": {scope: "repo read:user"},
 	"linear": {scope: "read write", extras: map[string]string{"actor": "user"}},
 	// OAuthService.slack sets scope to "" and moves the scope to user_scope.
-	"slack":  {scope: "", extras: map[string]string{"user_scope": "emoji:read"}},
-	"asana":  {scope: "default"},
-	"google": {scope: "https://www.googleapis.com/auth/drive.readonly", extras: map[string]string{"access_type": "offline", "prompt": "consent"}},
-	"jira":   {scope: "read:jira-work offline_access", extras: map[string]string{"audience": "api.atlassian.com", "prompt": "consent"}},
-	"zoom":   {scope: "meeting:write"},
+	"slack":     {scope: "", extras: map[string]string{"user_scope": "emoji:read"}},
+	"asana":     {scope: "default"},
+	"google":    {scope: "https://www.googleapis.com/auth/drive.readonly", extras: map[string]string{"access_type": "offline", "prompt": "consent"}},
+	"atlassian": {scope: "read:jira-work offline_access", extras: map[string]string{"audience": "api.atlassian.com", "prompt": "consent"}},
+	"zoom":      {scope: "meeting:write"},
 }
 
 var encodings = []string{"json", "url-encoded"}
@@ -618,11 +618,11 @@ func TestProviderRefusals(t *testing.T) {
 		}
 	})
 	t.Run("a provider out of reach", func(t *testing.T) {
-		h := newHarness(t, "jira")
-		si, code := h.signIn(t, "jira")
-		h.providers["jira"].srv.Close()
-		status, body := h.post(t, "/jira/token", "json", exchangeFields(code, si.verifier))
-		if desc, _ := body["error_description"].(string); status != http.StatusBadGateway || !strings.Contains(desc, "Jira couldn't be reached") {
+		h := newHarness(t, "atlassian")
+		si, code := h.signIn(t, "atlassian")
+		h.providers["atlassian"].srv.Close()
+		status, body := h.post(t, "/atlassian/token", "json", exchangeFields(code, si.verifier))
+		if desc, _ := body["error_description"].(string); status != http.StatusBadGateway || !strings.Contains(desc, "Atlassian (Jira, Confluence) couldn't be reached") {
 			t.Fatalf("%d %v", status, body)
 		}
 		h.checkLogs(t)
@@ -675,10 +675,10 @@ func TestUnconfiguredProviders(t *testing.T) {
 }
 
 func TestIndexHealthAndMethods(t *testing.T) {
-	h := newHarness(t, "github", "jira")
+	h := newHarness(t, "github", "atlassian")
 	resp := h.get(t, h.relay.URL+"/")
 	body, _ := io.ReadAll(resp.Body)
-	for _, want := range []string{h.relay.URL + "/github/callback", h.relay.URL + "/jira/callback", "GitHub", "Jira"} {
+	for _, want := range []string{h.relay.URL + "/github/callback", h.relay.URL + "/atlassian/callback", "GitHub", "Atlassian (Jira, Confluence)"} {
 		if !strings.Contains(string(body), want) {
 			t.Errorf("the index page doesn't show %q", want)
 		}

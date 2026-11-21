@@ -11,6 +11,7 @@ import (
 	"io"
 	"net"
 	"net/url"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -47,6 +48,9 @@ type Config struct {
 	HideInfoPage bool
 	// Providers holds the configured providers by name.
 	Providers map[string]Provider
+	// Notes say which deprecated names the configuration used, for the log at start. They name settings, never
+	// their values.
+	Notes []string
 }
 
 // Provider is a built-in provider with the relay's OAuth app for it.
@@ -114,6 +118,22 @@ func Load(getenv func(string) string, readFile func(string) ([]byte, error)) (*C
 			return nil, fmt.Errorf("reading the config file %s: %w", path, err)
 		}
 	}
+	var notes []string
+	// A provider under a deprecated name (providers.jira) counts as its new one, unless that's set too.
+	for _, alias := range sortedAliases() {
+		fp, ok := fc.Providers[alias]
+		if !ok {
+			continue
+		}
+		delete(fc.Providers, alias)
+		name := provider.Aliases[alias]
+		if _, both := fc.Providers[name]; both {
+			notes = append(notes, fmt.Sprintf("providers.%s is ignored: providers.%s is set, and %s is its old name", alias, name, alias))
+			continue
+		}
+		fc.Providers[name] = fp
+		notes = append(notes, fmt.Sprintf("providers.%s is deprecated: rename it providers.%s", alias, name))
+	}
 	for name := range fc.Providers {
 		if _, ok := provider.Lookup(name); !ok {
 			return nil, fmt.Errorf("providers: unknown provider %q; the relay knows %s", name, strings.Join(provider.Names(), ", "))
@@ -147,15 +167,37 @@ func Load(getenv func(string) string, readFile func(string) ([]byte, error)) (*C
 			fp = &fileProvider{}
 		}
 		prefix := strings.ToUpper(name) + "_"
-		env(prefix+"CLIENT_ID", &fp.ClientID)
-		env(prefix+"CLIENT_SECRET", &fp.ClientSecret)
-		env(prefix+"CLIENT_SECRET_FILE", &fp.ClientSecretFile)
-		env(prefix+"AUTHORIZE_URL", &fp.AuthorizeURL)
-		env(prefix+"TOKEN_URL", &fp.TokenURL)
-		if v := getenv(EnvPrefix + prefix + "PKCE"); v != "" {
+		// A deprecated name's variables (FUDGE_OAUTH_JIRA_*) count where the new name's aren't set.
+		providerEnv := func(key string) (string, string) {
+			value, from := getenv(EnvPrefix+prefix+key), EnvPrefix+prefix+key
+			for _, alias := range provider.AliasesOf(name) {
+				old := strings.ToUpper(alias) + "_"
+				v := getenv(EnvPrefix + old + key)
+				switch {
+				case v == "":
+				case value == "":
+					value, from = v, EnvPrefix+old+key
+					notes = appendOnce(notes, fmt.Sprintf("%s%s* is deprecated: use %s%s*", EnvPrefix, old, EnvPrefix, prefix))
+				default:
+					notes = appendOnce(notes, fmt.Sprintf("%s%s%s is ignored: %s%s%s is set", EnvPrefix, old, key, EnvPrefix, prefix, key))
+				}
+			}
+			return value, from
+		}
+		penv := func(key string, into *string) {
+			if v, _ := providerEnv(key); v != "" {
+				*into = v
+			}
+		}
+		penv("CLIENT_ID", &fp.ClientID)
+		penv("CLIENT_SECRET", &fp.ClientSecret)
+		penv("CLIENT_SECRET_FILE", &fp.ClientSecretFile)
+		penv("AUTHORIZE_URL", &fp.AuthorizeURL)
+		penv("TOKEN_URL", &fp.TokenURL)
+		if v, from := providerEnv("PKCE"); v != "" {
 			b, err := strconv.ParseBool(v)
 			if err != nil {
-				return nil, fmt.Errorf("%s%sPKCE: %q isn't true or false", EnvPrefix, prefix, v)
+				return nil, fmt.Errorf("%s: %q isn't true or false", from, v)
 			}
 			fp.PKCE = &b
 		}
@@ -169,6 +211,7 @@ func Load(getenv func(string) string, readFile func(string) ([]byte, error)) (*C
 		TLSCertFile: strings.TrimSpace(fc.TLS.CertFile),
 		TLSKeyFile:  strings.TrimSpace(fc.TLS.KeyFile),
 		Providers:   map[string]Provider{},
+		Notes:       notes,
 	}
 	if fc.InfoPage != nil {
 		cfg.HideInfoPage = !*fc.InfoPage
@@ -255,6 +298,23 @@ func buildProvider(name string, fp *fileProvider, readFile func(string) ([]byte,
 		p.PKCE = *fp.PKCE
 	}
 	return p, nil
+}
+
+// sortedAliases lists the deprecated provider names in order, so notes come out the same each time.
+func sortedAliases() []string {
+	aliases := make([]string, 0, len(provider.Aliases))
+	for alias := range provider.Aliases {
+		aliases = append(aliases, alias)
+	}
+	sort.Strings(aliases)
+	return aliases
+}
+
+func appendOnce(notes []string, note string) []string {
+	if slices.Contains(notes, note) {
+		return notes
+	}
+	return append(notes, note)
 }
 
 // secret returns value, or the trimmed contents of file. Setting both is an error.
