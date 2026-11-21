@@ -3,6 +3,7 @@ package config
 import (
 	"errors"
 	"io/fs"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -40,9 +41,9 @@ providers:
   github:
     client_id: gh-id
     client_secret_file: /run/secrets/github
-  jira:
-    client_id: jira-id
-    client_secret: jira-secret
+  atlassian:
+    client_id: atlassian-id
+    client_secret: atlassian-secret
     authorize_url: https://auth.example.com/authorize?audience=api.example.com
     pkce: true
 `,
@@ -61,16 +62,20 @@ providers:
 	if len(cfg.Key) != 32 || cfg.Key[31] != 31 {
 		t.Errorf("Key = %v", cfg.Key)
 	}
-	if got := strings.Join(cfg.Names(), ","); got != "github,jira" {
+	if got := strings.Join(cfg.Names(), ","); got != "github,atlassian" {
 		t.Errorf("Names = %s", got)
 	}
 	gh := cfg.Providers["github"]
 	if gh.ClientID != "gh-id" || gh.ClientSecret != "gh-secret" || gh.TokenURL != "https://github.com/login/oauth/access_token" || !gh.PKCE {
 		t.Errorf("github = %+v", gh)
 	}
-	jira := cfg.Providers["jira"]
-	if jira.AuthorizeURL != "https://auth.example.com/authorize?audience=api.example.com" || !jira.PKCE || jira.ClientSecret != "jira-secret" {
-		t.Errorf("jira = %+v", jira)
+	atlassian := cfg.Providers["atlassian"]
+	if atlassian.AuthorizeURL != "https://auth.example.com/authorize?audience=api.example.com" || !atlassian.PKCE ||
+		atlassian.ClientSecret != "atlassian-secret" {
+		t.Errorf("atlassian = %+v", atlassian)
+	}
+	if len(cfg.Notes) != 0 {
+		t.Errorf("Notes = %q", cfg.Notes)
 	}
 	if got := cfg.CallbackURL("github"); got != "https://oauth.example.com/github/callback" {
 		t.Errorf("CallbackURL = %s", got)
@@ -315,4 +320,79 @@ func TestErrorsNeverShowSecrets(t *testing.T) {
 	if errors.Unwrap(err) != nil && strings.Contains(errors.Unwrap(err).Error(), "TOP-SECRET") {
 		t.Fatal("the wrapped error shows the key")
 	}
+}
+
+// The Atlassian provider was "jira" until v0.3.0. Its old names still configure it, for one release, with a note
+// for the log at start.
+func TestJiraConfiguresAtlassian(t *testing.T) {
+	base := map[string]string{"FUDGE_OAUTH_PUBLIC_URL": "https://oauth.example.com", "FUDGE_OAUTH_KEY": testKey}
+	with := func(extra map[string]string) map[string]string {
+		vars := map[string]string{}
+		for k, v := range base {
+			vars[k] = v
+		}
+		for k, v := range extra {
+			vars[k] = v
+		}
+		return vars
+	}
+	check := func(t *testing.T, cfg *Config, err error, wantID string, wantNotes ...string) {
+		t.Helper()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := strings.Join(cfg.Names(), ","); got != "atlassian" {
+			t.Errorf("Names = %s", got)
+		}
+		if p := cfg.Providers["atlassian"]; p.ClientID != wantID || p.Name != "atlassian" {
+			t.Errorf("atlassian = %+v, want client_id %s", p, wantID)
+		}
+		if !slices.Equal(cfg.Notes, wantNotes) {
+			t.Errorf("Notes = %q, want %q", cfg.Notes, wantNotes)
+		}
+		for _, note := range cfg.Notes {
+			if strings.Contains(note, "secret-") || strings.Contains(note, "-id") {
+				t.Errorf("a note shows a value: %q", note)
+			}
+		}
+	}
+
+	t.Run("providers.jira", func(t *testing.T) {
+		cfg, err := load(t, with(map[string]string{"FUDGE_OAUTH_CONFIG": "/c.yaml"}), map[string]string{
+			"/c.yaml": "providers:\n  jira:\n    client_id: old-id\n    client_secret: secret-1\n",
+		})
+		check(t, cfg, err, "old-id", "providers.jira is deprecated: rename it providers.atlassian")
+	})
+	t.Run("providers.jira beside providers.atlassian", func(t *testing.T) {
+		cfg, err := load(t, with(map[string]string{"FUDGE_OAUTH_CONFIG": "/c.yaml"}), map[string]string{
+			"/c.yaml": "providers:\n  jira:\n    client_id: old-id\n    client_secret: secret-1\n" +
+				"  atlassian:\n    client_id: new-id\n    client_secret: secret-2\n",
+		})
+		check(t, cfg, err, "new-id", "providers.jira is ignored: providers.atlassian is set, and jira is its old name")
+	})
+	t.Run("FUDGE_OAUTH_JIRA_*", func(t *testing.T) {
+		cfg, err := load(t, with(map[string]string{
+			"FUDGE_OAUTH_JIRA_CLIENT_ID": "old-id", "FUDGE_OAUTH_JIRA_CLIENT_SECRET": "secret-1",
+		}), nil)
+		// One note for the old prefix, however many of its variables are set.
+		check(t, cfg, err, "old-id", "FUDGE_OAUTH_JIRA_* is deprecated: use FUDGE_OAUTH_ATLASSIAN_*")
+	})
+	t.Run("FUDGE_OAUTH_ATLASSIAN_* wins", func(t *testing.T) {
+		cfg, err := load(t, with(map[string]string{
+			"FUDGE_OAUTH_JIRA_CLIENT_ID": "old-id", "FUDGE_OAUTH_JIRA_CLIENT_SECRET": "secret-1",
+			"FUDGE_OAUTH_ATLASSIAN_CLIENT_ID": "new-id", "FUDGE_OAUTH_ATLASSIAN_CLIENT_SECRET": "secret-2",
+		}), nil)
+		check(t, cfg, err, "new-id",
+			"FUDGE_OAUTH_JIRA_CLIENT_ID is ignored: FUDGE_OAUTH_ATLASSIAN_CLIENT_ID is set",
+			"FUDGE_OAUTH_JIRA_CLIENT_SECRET is ignored: FUDGE_OAUTH_ATLASSIAN_CLIENT_SECRET is set")
+		if got := cfg.Providers["atlassian"].ClientSecret; got != "secret-2" {
+			t.Errorf("client_secret from the old name")
+		}
+	})
+	t.Run("FUDGE_OAUTH_ATLASSIAN_*", func(t *testing.T) {
+		cfg, err := load(t, with(map[string]string{
+			"FUDGE_OAUTH_ATLASSIAN_CLIENT_ID": "new-id", "FUDGE_OAUTH_ATLASSIAN_CLIENT_SECRET": "secret-2",
+		}), nil)
+		check(t, cfg, err, "new-id")
+	})
 }

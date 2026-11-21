@@ -276,3 +276,39 @@ func TestTheCACertificatesAreChecked(t *testing.T) {
 		t.Error(err)
 	}
 }
+
+func TestTheStartLinesSayWhenAnOldNameConfiguresAService(t *testing.T) {
+	e := relayEnv(":8080", "", "")
+	e["FUDGE_OAUTH_JIRA_CLIENT_ID"] = "id"
+	e["FUDGE_OAUTH_JIRA_CLIENT_SECRET"] = "secret"
+	cfg, err := config.Load(e.getenv, readFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var logs bytes.Buffer
+	logStart(slog.New(slog.NewJSONHandler(&logs, nil)), cfg)
+	var warnings []string
+	var services []string
+	for _, line := range strings.Split(strings.TrimSpace(logs.String()), "\n") {
+		var entry map[string]any
+		if err := json.Unmarshal([]byte(line), &entry); err != nil {
+			t.Fatal(err)
+		}
+		switch {
+		case entry["level"] == "WARN":
+			warnings = append(warnings, fmt.Sprint(entry["msg"]))
+		case entry["msg"] == "service":
+			services = append(services, fmt.Sprint(entry["provider"], " ", entry["callback"]))
+		}
+	}
+	// Once, however many of the old variables are set; the service is Atlassian, at its own callback.
+	if want := []string{"FUDGE_OAUTH_JIRA_* is deprecated: use FUDGE_OAUTH_ATLASSIAN_*"}; !slices.Equal(warnings, want) {
+		t.Errorf("warnings %q, want %q", warnings, want)
+	}
+	if !slices.Contains(services, "atlassian https://oauth.example.com/atlassian/callback") {
+		t.Errorf("services %q", services)
+	}
+	if strings.Contains(logs.String(), "secret") {
+		t.Errorf("the start lines show a secret: %s", logs.String())
+	}
+}

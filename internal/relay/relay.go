@@ -186,6 +186,15 @@ func (s *Server) authorize(w http.ResponseWriter, r *http.Request) {
 			params[name] = values
 		}
 	}
+	// What the provider needs that the extension may not send (Atlassian's audience and prompt). Never twice:
+	// the extension's own value stays.
+	for name, value := range p.AuthorizeDefaults {
+		if params.Get(name) == "" {
+			params.Set(name, value)
+		}
+	}
+	// Always the provider's own callback, even when the sign-in came in at an alias's path: the provider
+	// compares it exactly with the one registered.
 	params.Set("client_id", p.ClientID)
 	params.Set("redirect_uri", s.cfg.CallbackURL(p.Name))
 	params.Set("response_type", "code")
@@ -228,6 +237,24 @@ type codePayload struct {
 	RedirectURI string `json:"r"`
 	Challenge   string `json:"c"`
 	Verifier    string `json:"v,omitempty"`
+	// Callback is the relay's callback the provider was given, when it isn't the provider's own: a sign-in
+	// begun under a deprecated name (/jira/callback) before an upgrade. The exchange must send the same one.
+	Callback string `json:"u,omitempty"`
+}
+
+// openSealed opens a value sealed for kind and p, or, for a sign-in begun before an upgrade, for one of p's
+// deprecated names. It returns the name it was sealed for.
+func (s *Server) openSealed(kind string, p config.Provider, sealed string, into any) (string, error) {
+	err := s.sealer.Open(purpose(kind, p.Name), sealed, s.now(), into)
+	if err == nil || errors.Is(err, seal.ErrExpired) {
+		return p.Name, err
+	}
+	for _, alias := range provider.AliasesOf(p.Name) {
+		if aliasErr := s.sealer.Open(purpose(kind, alias), sealed, s.now(), into); aliasErr == nil || errors.Is(aliasErr, seal.ErrExpired) {
+			return alias, aliasErr
+		}
+	}
+	return p.Name, err
 }
 
 func (s *Server) callback(w http.ResponseWriter, r *http.Request) {
@@ -237,7 +264,8 @@ func (s *Server) callback(w http.ResponseWriter, r *http.Request) {
 	}
 	q := r.URL.Query()
 	var st statePayload
-	if err := s.sealer.Open(purpose(kindState, p.Name), q.Get("state"), s.now(), &st); err != nil || st.Provider != p.Name {
+	sealedFor, err := s.openSealed(kindState, p, q.Get("state"), &st)
+	if err != nil || st.Provider != sealedFor {
 		msg := "This sign-in link isn't valid. Start signing in again from Fudge."
 		if errors.Is(err, seal.ErrExpired) {
 			msg = "This sign-in took too long. Start signing in again from Fudge."
@@ -263,13 +291,18 @@ func (s *Server) callback(w http.ResponseWriter, r *http.Request) {
 		params.Set("error", "invalid_request")
 		params.Set("error_description", p.Title+" sent no code back.")
 	default:
-		sealed, err := s.sealer.Seal(purpose(kindCode, p.Name), codePayload{
+		payload := codePayload{
 			Provider:    p.Name,
 			Code:        code,
 			RedirectURI: st.RedirectURI,
 			Challenge:   st.Challenge,
 			Verifier:    st.Verifier,
-		}, s.now().Add(CodeLifetime))
+		}
+		if sealedFor != p.Name {
+			// Begun before an upgrade, so the provider was sent the old name's callback.
+			payload.Callback = s.cfg.CallbackURL(sealedFor)
+		}
+		sealed, err := s.sealer.Seal(purpose(kindCode, p.Name), payload, s.now().Add(CodeLifetime))
 		if err != nil {
 			s.log.Error("sealing the code failed", "provider", p.Name)
 			params.Set("error", "server_error")
@@ -302,7 +335,7 @@ func (s *Server) tokenRequest(w http.ResponseWriter, r *http.Request) (config.Pr
 }
 
 // token redeems a code. It refreshes too, since OAuthService refreshes Google,
-// Jira and Zoom at their token URL.
+// Atlassian and Zoom at their token URL.
 func (s *Server) token(w http.ResponseWriter, r *http.Request) {
 	p, form, ok := s.tokenRequest(w, r)
 	if !ok {
@@ -332,7 +365,8 @@ func (s *Server) refresh(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) redeem(w http.ResponseWriter, r *http.Request, p config.Provider, form map[string]string) {
 	var c codePayload
-	if err := s.sealer.Open(purpose(kindCode, p.Name), form["code"], s.now(), &c); err != nil {
+	sealedFor, err := s.openSealed(kindCode, p, form["code"], &c)
+	if err != nil {
 		msg := "The code isn't valid. Sign in again."
 		if errors.Is(err, seal.ErrExpired) {
 			msg = "The code has expired. Sign in again."
@@ -340,7 +374,7 @@ func (s *Server) redeem(w http.ResponseWriter, r *http.Request, p config.Provide
 		writeError(w, http.StatusBadRequest, "invalid_grant", msg)
 		return
 	}
-	if c.Provider != p.Name { // already bound by purpose; checked again in case that ever changes
+	if c.Provider != sealedFor { // already bound by purpose; checked again in case that ever changes
 		writeError(w, http.StatusBadRequest, "invalid_grant", "The code isn't valid. Sign in again.")
 		return
 	}
@@ -354,10 +388,15 @@ func (s *Server) redeem(w http.ResponseWriter, r *http.Request, p config.Provide
 		return
 	}
 
+	callback := c.Callback
+	if callback == "" {
+		// A code sealed by a relay from before an upgrade, under the old name, came back to the old callback.
+		callback = s.cfg.CallbackURL(sealedFor)
+	}
 	params := map[string]string{
 		"grant_type":   "authorization_code",
 		"code":         c.Code,
-		"redirect_uri": s.cfg.CallbackURL(p.Name),
+		"redirect_uri": callback,
 	}
 	if c.Verifier != "" {
 		params["code_verifier"] = c.Verifier
@@ -419,8 +458,9 @@ func validChallenge(c string) bool {
 // providerName returns the {provider} path segment.
 func providerName(r *http.Request) string { return r.PathValue("provider") }
 
+// lookup finds the configured provider for the path, a deprecated alias (/jira/…) included.
 func (s *Server) lookup(r *http.Request) (config.Provider, bool) {
-	p, ok := s.cfg.Providers[providerName(r)]
+	p, ok := s.cfg.Providers[provider.Canonical(providerName(r))]
 	return p, ok
 }
 

@@ -86,6 +86,9 @@ func logStart(log *slog.Logger, cfg *config.Config) {
 	for _, name := range cfg.Names() {
 		log.Info("service", "provider", name, "callback", cfg.CallbackURL(name))
 	}
+	for _, note := range cfg.Notes {
+		log.Warn(note)
+	}
 }
 
 // newServer returns the relay's server for cfg. When the relay serves HTTPS itself, it serves the configured pair,
