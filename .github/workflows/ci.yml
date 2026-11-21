@@ -37,6 +37,9 @@ jobs:
       - name: Build the image
         run: docker build --tag fudge-oauth:ci .
 
+      - name: Report its size
+        run: docker image ls fudge-oauth:ci --format 'fudge-oauth:ci is {{.Size}}'
+
       - name: Start it and check it answers
         run: |
           key="$(openssl rand -base64 32)"
