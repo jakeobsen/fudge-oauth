@@ -11,6 +11,10 @@ key_file: /run/secrets/fudge_oauth_key
 
 # listen: ":8080"   # ":8443" with tls below
 
+# The front page at public_url lists the services and their callback URLs.
+# Turn it off once sign-ins work; its log lists them at start too.
+# info_page: false
+
 # To serve HTTPS itself rather than behind a TLS proxy: a certificate for
 # public_url's host and its key, both PEM. A renewal is picked up within a
 # minute.
