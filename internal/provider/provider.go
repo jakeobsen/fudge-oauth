@@ -1,0 +1,136 @@
+// Package provider holds the built-in OAuth providers: the seven that
+// @raycast/utils' OAuthService knows (GitHub, Linear, Slack, Asana, Google,
+// Jira and Zoom), and how the relay talks to each.
+package provider
+
+import "slices"
+
+// ClientAuth says how the relay sends its client credentials with a token request.
+type ClientAuth int
+
+const (
+	// ClientAuthBody puts client_id and client_secret in the request body.
+	ClientAuthBody ClientAuth = iota
+	// ClientAuthBasic sends them as HTTP Basic authentication.
+	ClientAuthBasic
+)
+
+// BodyEncoding is how a token request's body is encoded.
+type BodyEncoding int
+
+const (
+	// BodyForm is application/x-www-form-urlencoded.
+	BodyForm BodyEncoding = iota
+	// BodyJSON is application/json.
+	BodyJSON
+)
+
+// Provider describes one OAuth provider.
+type Provider struct {
+	// Name is the provider's path segment: /<name>/authorize.
+	Name string
+	// Title is the provider's name for people.
+	Title string
+	// AuthorizeURL is the provider's authorization endpoint.
+	AuthorizeURL string
+	// TokenURL is the provider's token endpoint, used for refreshing too.
+	TokenURL string
+	// PKCE says whether the relay uses PKCE with the provider as well.
+	PKCE bool
+	// Refresh says whether the provider issues refresh tokens.
+	Refresh bool
+	// ClientAuth is how client credentials go with token requests.
+	ClientAuth ClientAuth
+	// TokenBody is how token requests are encoded.
+	TokenBody BodyEncoding
+	// Setup says where the provider's OAuth apps are registered, for the front page.
+	Setup string
+}
+
+// Builtin lists the providers in a stable order.
+var Builtin = []Provider{
+	{
+		Name:         "github",
+		Title:        "GitHub",
+		AuthorizeURL: "https://github.com/login/oauth/authorize",
+		TokenURL:     "https://github.com/login/oauth/access_token",
+		PKCE:         true,
+		// OAuth apps' tokens don't expire and come without a refresh token.
+		Refresh: false,
+		Setup:   "GitHub → Settings → Developer settings → OAuth Apps",
+	},
+	{
+		Name:         "linear",
+		Title:        "Linear",
+		AuthorizeURL: "https://linear.app/oauth/authorize",
+		TokenURL:     "https://api.linear.app/oauth/token",
+		PKCE:         true,
+		Refresh:      true,
+		Setup:        "Linear → Settings → API → OAuth applications",
+	},
+	{
+		Name:         "slack",
+		Title:        "Slack",
+		AuthorizeURL: "https://slack.com/oauth/v2/authorize",
+		TokenURL:     "https://slack.com/api/oauth.v2.access",
+		PKCE:         false,
+		Refresh:      true,
+		Setup:        "api.slack.com/apps → your app → OAuth & Permissions → Redirect URLs",
+	},
+	{
+		Name:         "asana",
+		Title:        "Asana",
+		AuthorizeURL: "https://app.asana.com/-/oauth_authorize",
+		TokenURL:     "https://app.asana.com/-/oauth_token",
+		PKCE:         true,
+		Refresh:      true,
+		Setup:        "Asana developer console → your app → OAuth → Redirect URLs",
+	},
+	{
+		Name:         "google",
+		Title:        "Google",
+		AuthorizeURL: "https://accounts.google.com/o/oauth2/v2/auth",
+		TokenURL:     "https://oauth2.googleapis.com/token",
+		PKCE:         true,
+		Refresh:      true,
+		Setup:        "Google Cloud console → APIs & Services → Credentials → OAuth client ID (Web application) → Authorized redirect URIs",
+	},
+	{
+		Name:         "jira",
+		Title:        "Jira",
+		AuthorizeURL: "https://auth.atlassian.com/authorize",
+		TokenURL:     "https://auth.atlassian.com/oauth/token",
+		PKCE:         false,
+		Refresh:      true,
+		TokenBody:    BodyJSON,
+		Setup:        "developer.atlassian.com → Developer console → your app → Authorization → OAuth 2.0 (3LO) → Callback URL",
+	},
+	{
+		Name:         "zoom",
+		Title:        "Zoom",
+		AuthorizeURL: "https://zoom.us/oauth/authorize",
+		TokenURL:     "https://zoom.us/oauth/token",
+		PKCE:         true,
+		Refresh:      true,
+		ClientAuth:   ClientAuthBasic,
+		Setup:        "Zoom App Marketplace → Develop → your app → OAuth Redirect URL and OAuth allow list",
+	},
+}
+
+// Lookup returns the built-in provider with this name.
+func Lookup(name string) (Provider, bool) {
+	i := slices.IndexFunc(Builtin, func(p Provider) bool { return p.Name == name })
+	if i < 0 {
+		return Provider{}, false
+	}
+	return Builtin[i], true
+}
+
+// Names lists the built-in providers' names, in Builtin's order.
+func Names() []string {
+	names := make([]string, len(Builtin))
+	for i, p := range Builtin {
+		names[i] = p.Name
+	}
+	return names
+}
