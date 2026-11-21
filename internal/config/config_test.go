@@ -180,6 +180,8 @@ func TestRefused(t *testing.T) {
 		{"an empty provider entry", with(map[string]string{"FUDGE_OAUTH_CONFIG": "/c.yaml"}), map[string]string{"/c.yaml": "providers:\n  zoom:\n"}, "providers.zoom: client_id is missing"},
 		{"a TLS certificate without its key", with(map[string]string{"FUDGE_OAUTH_TLS_CERT_FILE": "/tls/cert.pem"}), nil, "tls: cert_file and key_file go together"},
 		{"a TLS key without its certificate", with(map[string]string{"FUDGE_OAUTH_TLS_KEY_FILE": "/tls/key.pem"}), nil, "tls: cert_file and key_file go together"},
+		{"an info_page that isn't true or false", with(map[string]string{"FUDGE_OAUTH_INFO_PAGE": "off"}), nil, `FUDGE_OAUTH_INFO_PAGE: "off" isn't true or false`},
+		{"an info_page in the file that isn't a boolean", with(map[string]string{"FUDGE_OAUTH_CONFIG": "/c.yaml"}), map[string]string{"/c.yaml": "info_page: hidden\n"}, "cannot unmarshal !!str `hidden` into bool"},
 		{"an unknown TLS field", with(map[string]string{"FUDGE_OAUTH_CONFIG": "/c.yaml"}), map[string]string{"/c.yaml": "tls:\n  certfile: /c.pem\n"}, "certfile"},
 	}
 	for _, c := range cases {
@@ -246,6 +248,44 @@ providers:
 	}
 	if fromEnv.Listen != "127.0.0.1:9443" {
 		t.Errorf("a set listen address is kept: %q", fromEnv.Listen)
+	}
+}
+
+func TestInfoPage(t *testing.T) {
+	base := func(extra map[string]string) map[string]string {
+		m := map[string]string{
+			"FUDGE_OAUTH_PUBLIC_URL":           "https://oauth.example.com",
+			"FUDGE_OAUTH_KEY":                  testKey,
+			"FUDGE_OAUTH_GITHUB_CLIENT_ID":     "id",
+			"FUDGE_OAUTH_GITHUB_CLIENT_SECRET": "secret",
+		}
+		for k, v := range extra {
+			m[k] = v
+		}
+		return m
+	}
+	cases := []struct {
+		name  string
+		vars  map[string]string
+		files map[string]string
+		hide  bool
+	}{
+		{"on by default", base(nil), nil, false},
+		{"off from the environment", base(map[string]string{"FUDGE_OAUTH_INFO_PAGE": "false"}), nil, true},
+		{"on from the environment", base(map[string]string{"FUDGE_OAUTH_INFO_PAGE": "true"}), nil, false},
+		{"off from the file", base(map[string]string{"FUDGE_OAUTH_CONFIG": "/c.yaml"}), map[string]string{"/c.yaml": "info_page: false\n"}, true},
+		{"the environment overrides the file", base(map[string]string{"FUDGE_OAUTH_CONFIG": "/c.yaml", "FUDGE_OAUTH_INFO_PAGE": "true"}), map[string]string{"/c.yaml": "info_page: false\n"}, false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			cfg, err := load(t, c.vars, c.files)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if cfg.HideInfoPage != c.hide {
+				t.Errorf("HideInfoPage = %v, want %v", cfg.HideInfoPage, c.hide)
+			}
+		})
 	}
 }
 

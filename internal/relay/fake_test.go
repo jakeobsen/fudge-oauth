@@ -64,6 +64,12 @@ func (b *syncBuffer) String() string {
 // newHarness configures the named providers (all seven when none are named).
 func newHarness(t *testing.T, names ...string) *harness {
 	t.Helper()
+	return newHarnessWith(t, nil, names...)
+}
+
+// newHarnessWith is newHarness, with change applied to the config before the relay is made.
+func newHarnessWith(t *testing.T, change func(*config.Config), names ...string) *harness {
+	t.Helper()
 	if len(names) == 0 {
 		names = provider.Names()
 	}
@@ -87,6 +93,9 @@ func newHarness(t *testing.T, names ...string) *harness {
 		h.remember(p.ClientSecret)
 	}
 	h.remember(base64.StdEncoding.EncodeToString(testKey))
+	if change != nil {
+		change(h.cfg)
+	}
 
 	log := slog.New(slog.NewJSONHandler(h.logs, nil))
 	s, err := New(h.cfg, log, WithClock(h.clock))

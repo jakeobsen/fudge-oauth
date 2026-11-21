@@ -29,8 +29,9 @@ Configure only the ones you want to offer.
    - **With its own certificate:** set `tls.cert_file` and `tls.key_file` to a certificate for `public_url`'s host and its key, and fudge-oauth serves HTTPS on port 8443. It picks up a renewed certificate (from certbot, or an updated Kubernetes secret) within a minute, without a restart.
 2. **Register an OAuth app with each service** you offer. Its callback (redirect) URL is `<public_url>/<path>/callback`, e.g. `https://oauth.example.com/github/callback`. Note the client ID and client secret. Give the app the scopes your extensions ask for; for Slack, those are **user** token scopes.
 3. **Make a key** for sealing sign-ins: `openssl rand -base64 32`. Keep it with the secrets. Changing it only interrupts sign-ins in progress.
-4. **Configure and start it** (below). The front page, `<public_url>/`, lists the services it offers and each one's callback URL.
+4. **Configure and start it** (below). The front page, `<public_url>/`, lists the services it offers and each one's callback URL. So does its log when it starts, one line per service.
 5. **In Fudge**, open Settings → Sign-in, choose **Your own server…**, and enter `public_url`.
+6. **Once sign-ins work, turn the front page off** with `info_page: false`. `<public_url>/` then answers 404, as any unknown address does.
 
 ### The published image
 
@@ -94,6 +95,7 @@ A YAML file, whose path is in `FUDGE_OAUTH_CONFIG`, and environment variables. A
 | `listen` | `FUDGE_OAUTH_LISTEN` | The address to listen on. Default `:8080`, or `:8443` with a certificate. |
 | `tls.cert_file` | `FUDGE_OAUTH_TLS_CERT_FILE` | Optional: a PEM certificate chain for `public_url`'s host. With it and its key, fudge-oauth serves HTTPS only. |
 | `tls.key_file` | `FUDGE_OAUTH_TLS_KEY_FILE` | Its PEM private key. Set both or neither. |
+| `info_page` | `FUDGE_OAUTH_INFO_PAGE` | `true` (the default) or `false`. Whether `<public_url>/` shows the services and their callback URLs; with `false` it answers 404. |
 | `providers.<path>.client_id` | `FUDGE_OAUTH_<PATH>_CLIENT_ID` | The OAuth app's client ID. |
 | `providers.<path>.client_secret` / `client_secret_file` | `FUDGE_OAUTH_<PATH>_CLIENT_SECRET` / `…_CLIENT_SECRET_FILE` | Its secret. |
 | `providers.<path>.authorize_url` | `FUDGE_OAUTH_<PATH>_AUTHORIZE_URL` | Optional: another authorize endpoint, e.g. GitHub Enterprise Server's. |
