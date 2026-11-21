@@ -24,13 +24,20 @@ import (
 // EnvPrefix starts every environment variable the relay reads.
 const EnvPrefix = "FUDGE_OAUTH_"
 
-// DefaultListen is the address the relay listens on unless configured.
+// DefaultListen is the address the relay listens on unless configured: plain HTTP behind a proxy.
 const DefaultListen = ":8080"
+
+// DefaultListenTLS is the address the relay listens on unless configured, when it serves HTTPS itself.
+const DefaultListenTLS = ":8443"
 
 // Config is the relay's validated configuration.
 type Config struct {
 	// Listen is the address to listen on, e.g. ":8080".
 	Listen string
+	// TLSCertFile and TLSKeyFile are a PEM certificate chain and its key. With both, the relay serves HTTPS only;
+	// with neither, plain HTTP behind a proxy.
+	TLSCertFile string
+	TLSKeyFile  string
 	// PublicURL is the relay's address as browsers and Fudge reach it, without a trailing slash.
 	PublicURL string
 	// Key seals the relay's state and codes.
@@ -45,6 +52,9 @@ type Provider struct {
 	ClientID     string
 	ClientSecret string
 }
+
+// TLS says whether the relay serves HTTPS itself.
+func (c *Config) TLS() bool { return c.TLSCertFile != "" }
 
 // CallbackURL is where the provider sends the browser back to the relay.
 // It's the URL to register with the provider.
@@ -65,10 +75,16 @@ func (c *Config) Names() []string {
 
 type fileConfig struct {
 	Listen    string                   `yaml:"listen"`
+	TLS       fileTLS                  `yaml:"tls"`
 	PublicURL string                   `yaml:"public_url"`
 	Key       string                   `yaml:"key"`
 	KeyFile   string                   `yaml:"key_file"`
 	Providers map[string]*fileProvider `yaml:"providers"`
+}
+
+type fileTLS struct {
+	CertFile string `yaml:"cert_file"`
+	KeyFile  string `yaml:"key_file"`
 }
 
 type fileProvider struct {
@@ -106,6 +122,8 @@ func Load(getenv func(string) string, readFile func(string) ([]byte, error)) (*C
 		}
 	}
 	env("LISTEN", &fc.Listen)
+	env("TLS_CERT_FILE", &fc.TLS.CertFile)
+	env("TLS_KEY_FILE", &fc.TLS.KeyFile)
 	env("PUBLIC_URL", &fc.PublicURL)
 	env("KEY", &fc.Key)
 	env("KEY_FILE", &fc.KeyFile)
@@ -135,9 +153,20 @@ func Load(getenv func(string) string, readFile func(string) ([]byte, error)) (*C
 		}
 	}
 
-	cfg := &Config{Listen: fc.Listen, Providers: map[string]Provider{}}
+	cfg := &Config{
+		Listen:      fc.Listen,
+		TLSCertFile: strings.TrimSpace(fc.TLS.CertFile),
+		TLSKeyFile:  strings.TrimSpace(fc.TLS.KeyFile),
+		Providers:   map[string]Provider{},
+	}
+	if (cfg.TLSCertFile == "") != (cfg.TLSKeyFile == "") {
+		return nil, errors.New("tls: cert_file and key_file go together; set both to serve HTTPS, or neither to serve plain HTTP behind a proxy")
+	}
 	if cfg.Listen == "" {
 		cfg.Listen = DefaultListen
+		if cfg.TLS() {
+			cfg.Listen = DefaultListenTLS
+		}
 	}
 
 	publicURL, err := checkURL(fc.PublicURL, true)
