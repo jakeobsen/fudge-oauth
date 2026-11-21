@@ -9,7 +9,14 @@ public_url: https://oauth.example.com
 # 32 random bytes in base64 (`openssl rand -base64 32`), or key_file.
 key_file: /run/secrets/fudge_oauth_key
 
-# listen: ":8080"
+# listen: ":8080"   # ":8443" with tls below
+
+# To serve HTTPS itself rather than behind a TLS proxy: a certificate for
+# public_url's host and its key, both PEM. A renewal is picked up within a
+# minute.
+# tls:
+#   cert_file: /tls/fullchain.pem
+#   key_file: /tls/privkey.pem
 
 # Configure only the providers you offer; each needs a client ID and secret
 # (client_secret, or client_secret_file).

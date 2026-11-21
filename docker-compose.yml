@@ -1,15 +1,23 @@
 # An example: fudge-oauth with its config and secrets as files.
-# Put a TLS-terminating proxy in front of it, at the config's public_url.
+# Put a TLS-terminating proxy in front of it, at the config's public_url,
+# or let it serve HTTPS with its own certificate (the commented lines).
 services:
   fudge-oauth:
-    build: .
+    image: ghcr.io/jakeobsen/fudge-oauth:latest
+    # build: .   # to build the image from this folder instead
     restart: unless-stopped
     ports:
       - "127.0.0.1:8080:8080"
+      # With its own certificate: HTTPS on 8443 instead.
+      # - "443:8443"
     environment:
       FUDGE_OAUTH_CONFIG: /config/fudge-oauth.yaml
+      # FUDGE_OAUTH_TLS_CERT_FILE: /tls/fullchain.pem
+      # FUDGE_OAUTH_TLS_KEY_FILE: /tls/privkey.pem
     volumes:
       - ./fudge-oauth.yaml:/config/fudge-oauth.yaml:ro
+      # Readable by the image's user, 65532.
+      # - ./tls:/tls:ro
     secrets:
       - fudge_oauth_key
       - github_client_secret

@@ -8,9 +8,11 @@ fudge-oauth is the OAuth sign-in relay for Fudge (`jakeobsen/fudge`), a macOS la
 
 ## Layout
 
-- `cmd/fudge-oauth`: `main`. Loads the config, serves with timeouts and a graceful shutdown on SIGTERM, and has a `healthcheck [URL]` subcommand for the container's health check (distroless has no shell or curl).
+- `cmd/fudge-oauth`: `main`. Loads the config, serves with timeouts and a graceful shutdown on SIGTERM (plain HTTP, or HTTPS only with TLS 1.2 at least when a certificate is configured), and has a `healthcheck [URL]` subcommand for the container's health check (the image has no shell or curl). `healthcheck` fails when the system's CA certificates don't load (`checkRoots`), then asks URL, or the relay's own `/healthz` from its config (`healthURL`: 127.0.0.1 for an unspecified listen address, `https` with TLS, skipping verification for that call only, since the certificate names the public host).
 - `internal/provider`: the built-in table, one `Provider` per provider: path name, title, endpoints, whether the relay uses PKCE with it, whether it issues refresh tokens, how client credentials go (`ClientAuthBody` or `ClientAuthBasic`) and the token body encoding (`BodyForm` or `BodyJSON`).
-- `internal/config`: `Load(getenv, readFile)`. YAML from `FUDGE_OAUTH_CONFIG` (strict: unknown fields are errors), then `FUDGE_OAUTH_*` variables override value by value, then validation. Secrets may come from files (`key_file`, `client_secret_file`), trimmed. A provider is configured once it has a client ID and secret.
+- `internal/config`: `Load(getenv, readFile)`. YAML from `FUDGE_OAUTH_CONFIG` (strict: unknown fields are errors), then `FUDGE_OAUTH_*` variables override value by value, then validation. Secrets may come from files (`key_file`, `client_secret_file`), trimmed. A provider is configured once it has a client ID and secret. `tls.cert_file` and `tls.key_file` go together; with them `listen` defaults to `:8443`, else `:8080`.
+- `internal/tlscert`: the relay's own certificate. `New` refuses a pair that can't be read or doesn't match; `GetCertificate` re-reads the files when their modification times change, checking at most once a minute (`CheckInterval`), and keeps the old pair, logging why, when a new one doesn't load. Errors name the setting (`tls.cert_file`), never the path.
+- `internal/testcert`: self-signed certificates for tests.
 - `internal/seal`: AES-256-GCM sealing. The expiry is inside the ciphertext, and the purpose is the additional data. The relay's purposes are `state/<provider>` and `code/<provider>` (`purpose` in `relay.go`), so a sealed state never opens as a code, nor either at another provider's endpoints. Output is unpadded base64url.
 - `internal/relay`: the HTTP handlers (`relay.go`), the token exchange with the provider (`exchange.go`), and the pages and request logging (`pages.go`).
 
@@ -33,6 +35,11 @@ fudge-oauth is the OAuth sign-in relay for Fudge (`jakeobsen/fudge`), a macOS la
 
 ## Tests
 
-`make test` (`go test -race ./...`) and `make lint` (gofmt, `go vet`, staticcheck pinned in the Makefile). CI runs both on Ubuntu, then builds the image, starts it and checks `/healthz` and the front page.
+`make test` (`go test -race ./...`) and `make lint` (gofmt, `go vet`, and staticcheck and actionlint pinned in the Makefile). CI runs both on Ubuntu, then builds the image and reports its size, starts it and checks `/healthz`, the front page and `healthcheck`, checks that `healthcheck` fails without CA certificates (`SSL_CERT_FILE` and `SSL_CERT_DIR` pointed at nothing, so no network is needed), and runs it again with a generated certificate over HTTPS until the image's own health check reports healthy.
 
 `internal/relay` tests run the relay against fake providers (`fake_test.go`): `httptest` servers that check each request the way that provider would (client credentials, body encoding, `Accept`, the relay's callback, PKCE) and answer with that provider's documented response shapes, including its error shapes. `relay_test.go` pins what Fudge and `OAuthService` send: the authorize parameters, and the token and refresh bodies field for field, as JSON and as `URLSearchParams`. No test reaches a real provider or the network. Time is a `WithClock` option, so expiry tests advance a fake clock. The harness's `t` is the top-level test's, used only by the fakes from their own goroutines; helpers take the running (sub)test's `t`.
+
+## The image and releases
+
+- **The image is `FROM scratch`:** the static binary and the build stage's CA bundle (the relay calls the services over HTTPS), as user `65532:65532`. Nothing else goes in without a reason. The build stage runs on `$BUILDPLATFORM` and cross-compiles with `TARGETOS`/`TARGETARCH`, so no emulation is needed. No time zone data: the relay only compares and logs times, in UTC.
+- **`.github/workflows/release.yml`** runs on a pushed `v*` tag: the tag must be `v` + semver (no build metadata), then lint and tests, then the amd64 image is built and smoke-tested, then both platforms are pushed to `ghcr.io/jakeobsen/fudge-oauth` with `docker/metadata-action`'s tags (`{{version}}`, and `latest` only for a release, never a pre-release), labels and annotations (manifest and index). Only that job has `packages: write`; it logs in with the workflow's own `GITHUB_TOKEN`.
