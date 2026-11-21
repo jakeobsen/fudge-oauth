@@ -24,11 +24,23 @@ Configure only the ones you want to offer.
 
 ## Setting it up
 
-1. **Choose its address**, e.g. `https://oauth.example.com`. That's `public_url`. fudge-oauth serves plain HTTP on port 8080; put it behind a proxy that terminates TLS at that address.
+1. **Choose its address**, e.g. `https://oauth.example.com`. That's `public_url`, and the services call back to it, so it's always `https://`. Then pick one of two ways to serve it:
+   - **Behind a TLS proxy:** fudge-oauth serves plain HTTP on port 8080, and the proxy terminates TLS at `public_url`.
+   - **With its own certificate:** set `tls.cert_file` and `tls.key_file` to a certificate for `public_url`'s host and its key, and fudge-oauth serves HTTPS on port 8443. It picks up a renewed certificate (from certbot, or an updated Kubernetes secret) within a minute, without a restart.
 2. **Register an OAuth app with each service** you offer. Its callback (redirect) URL is `<public_url>/<path>/callback`, e.g. `https://oauth.example.com/github/callback`. Note the client ID and client secret. Give the app the scopes your extensions ask for; for Slack, those are **user** token scopes.
 3. **Make a key** for sealing sign-ins: `openssl rand -base64 32`. Keep it with the secrets. Changing it only interrupts sign-ins in progress.
 4. **Configure and start it** (below). The front page, `<public_url>/`, lists the services it offers and each one's callback URL.
 5. **In Fudge**, open Settings → Sign-in, choose **Your own server…**, and enter `public_url`.
+
+### The published image
+
+```sh
+docker pull ghcr.io/jakeobsen/fudge-oauth:latest
+```
+
+Each release is a pushed `v*` tag, published as its version without the `v` (`v1.2.3` is `1.2.3`). `latest` is the newest release; a pre-release such as `v1.3.0-rc.1` gets only its own tag. Images are for `linux/amd64` and `linux/arm64`.
+
+The image holds only the static binary and the CA certificates, and runs as user 65532, so mounted secrets and certificates must be readable by that user. Its health check runs `/fudge-oauth healthcheck`, which asks the relay's own `/healthz` (over HTTPS when it serves HTTPS) and checks that the CA certificates load.
 
 ### With Docker Compose
 
@@ -38,20 +50,34 @@ Configure only the ones you want to offer.
 docker compose up -d
 ```
 
+It runs the published image; its comments show how to build it yourself, and how to serve HTTPS with your own certificate.
+
 ### With Docker
 
+Behind a TLS proxy:
+
 ```sh
-docker build -t fudge-oauth .
 docker run -d -p 127.0.0.1:8080:8080 \
   -e FUDGE_OAUTH_PUBLIC_URL=https://oauth.example.com \
   -e FUDGE_OAUTH_KEY_FILE=/run/secrets/key \
   -e FUDGE_OAUTH_GITHUB_CLIENT_ID=… \
   -e FUDGE_OAUTH_GITHUB_CLIENT_SECRET_FILE=/run/secrets/github \
   -v "$PWD/secrets:/run/secrets:ro" \
-  fudge-oauth
+  ghcr.io/jakeobsen/fudge-oauth:latest
 ```
 
-The image is a static binary on distroless, running as a non-root user. Its health check runs `/fudge-oauth healthcheck`.
+With its own certificate, add the certificate and key, read-only, and publish port 8443 instead:
+
+```sh
+docker run -d -p 443:8443 \
+  -e FUDGE_OAUTH_TLS_CERT_FILE=/tls/fullchain.pem \
+  -e FUDGE_OAUTH_TLS_KEY_FILE=/tls/privkey.pem \
+  -v /etc/fudge-oauth/tls:/tls:ro \
+  … \
+  ghcr.io/jakeobsen/fudge-oauth:latest
+```
+
+To build the image yourself: `docker build -t fudge-oauth .`
 
 ### Without a container
 
@@ -65,7 +91,9 @@ A YAML file, whose path is in `FUDGE_OAUTH_CONFIG`, and environment variables. A
 |---|---|---|
 | `public_url` | `FUDGE_OAUTH_PUBLIC_URL` | Required. The address browsers and Fudge use. `https://`, or `http://` on localhost for testing. |
 | `key` / `key_file` | `FUDGE_OAUTH_KEY` / `FUDGE_OAUTH_KEY_FILE` | Required. 32 random bytes in base64. |
-| `listen` | `FUDGE_OAUTH_LISTEN` | The address to listen on. Default `:8080`. |
+| `listen` | `FUDGE_OAUTH_LISTEN` | The address to listen on. Default `:8080`, or `:8443` with a certificate. |
+| `tls.cert_file` | `FUDGE_OAUTH_TLS_CERT_FILE` | Optional: a PEM certificate chain for `public_url`'s host. With it and its key, fudge-oauth serves HTTPS only. |
+| `tls.key_file` | `FUDGE_OAUTH_TLS_KEY_FILE` | Its PEM private key. Set both or neither. |
 | `providers.<path>.client_id` | `FUDGE_OAUTH_<PATH>_CLIENT_ID` | The OAuth app's client ID. |
 | `providers.<path>.client_secret` / `client_secret_file` | `FUDGE_OAUTH_<PATH>_CLIENT_SECRET` / `…_CLIENT_SECRET_FILE` | Its secret. |
 | `providers.<path>.authorize_url` | `FUDGE_OAUTH_<PATH>_AUTHORIZE_URL` | Optional: another authorize endpoint, e.g. GitHub Enterprise Server's. |
@@ -95,9 +123,11 @@ Logs are JSON lines on standard output, one per request: the path, the service, 
 
 ```sh
 make test    # go test -race ./...
-make lint    # gofmt, go vet, staticcheck
+make lint    # gofmt, go vet, staticcheck, actionlint
 make image   # docker build
 ```
+
+Pushing a tag `vX.Y.Z` (or `vX.Y.Z-rc.N`) runs the release workflow: the tests, a smoke test of the image, then the image for both platforms to ghcr.io.
 
 ## License
 

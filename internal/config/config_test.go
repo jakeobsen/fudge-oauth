@@ -178,6 +178,9 @@ func TestRefused(t *testing.T) {
 		{"an unknown field", with(map[string]string{"FUDGE_OAUTH_CONFIG": "/c.yaml"}), map[string]string{"/c.yaml": "public_ur: x\n"}, "public_ur"},
 		{"an unknown provider", with(map[string]string{"FUDGE_OAUTH_CONFIG": "/c.yaml"}), map[string]string{"/c.yaml": "providers:\n  gitlab: {client_id: a}\n"}, `unknown provider "gitlab"`},
 		{"an empty provider entry", with(map[string]string{"FUDGE_OAUTH_CONFIG": "/c.yaml"}), map[string]string{"/c.yaml": "providers:\n  zoom:\n"}, "providers.zoom: client_id is missing"},
+		{"a TLS certificate without its key", with(map[string]string{"FUDGE_OAUTH_TLS_CERT_FILE": "/tls/cert.pem"}), nil, "tls: cert_file and key_file go together"},
+		{"a TLS key without its certificate", with(map[string]string{"FUDGE_OAUTH_TLS_KEY_FILE": "/tls/key.pem"}), nil, "tls: cert_file and key_file go together"},
+		{"an unknown TLS field", with(map[string]string{"FUDGE_OAUTH_CONFIG": "/c.yaml"}), map[string]string{"/c.yaml": "tls:\n  certfile: /c.pem\n"}, "certfile"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -189,6 +192,60 @@ func TestRefused(t *testing.T) {
 				t.Fatalf("error %q doesn't say %q", err, c.want)
 			}
 		})
+	}
+}
+
+func TestTLS(t *testing.T) {
+	base := map[string]string{
+		"FUDGE_OAUTH_PUBLIC_URL":           "https://oauth.example.com",
+		"FUDGE_OAUTH_KEY":                  testKey,
+		"FUDGE_OAUTH_GITHUB_CLIENT_ID":     "id",
+		"FUDGE_OAUTH_GITHUB_CLIENT_SECRET": "secret",
+	}
+	plain, err := load(t, base, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plain.TLS() || plain.Listen != ":8080" {
+		t.Errorf("without TLS: TLS() = %v, Listen = %q; want plain HTTP on :8080", plain.TLS(), plain.Listen)
+	}
+
+	fromFile, err := load(t, map[string]string{"FUDGE_OAUTH_CONFIG": "/c.yaml"}, map[string]string{"/c.yaml": `
+public_url: https://oauth.example.com
+key: ` + testKey + `
+tls:
+  cert_file: /tls/fullchain.pem
+  key_file: /tls/privkey.pem
+providers:
+  github: {client_id: id, client_secret: secret}
+`})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !fromFile.TLS() || fromFile.TLSCertFile != "/tls/fullchain.pem" || fromFile.TLSKeyFile != "/tls/privkey.pem" {
+		t.Errorf("from the file: %+v", fromFile)
+	}
+	if fromFile.Listen != ":8443" {
+		t.Errorf("with TLS, Listen = %q; want :8443", fromFile.Listen)
+	}
+
+	vars := map[string]string{
+		"FUDGE_OAUTH_TLS_CERT_FILE": "/run/secrets/cert.pem",
+		"FUDGE_OAUTH_TLS_KEY_FILE":  "/run/secrets/key.pem",
+		"FUDGE_OAUTH_LISTEN":        "127.0.0.1:9443",
+	}
+	for k, v := range base {
+		vars[k] = v
+	}
+	fromEnv, err := load(t, vars, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !fromEnv.TLS() || fromEnv.TLSCertFile != "/run/secrets/cert.pem" || fromEnv.TLSKeyFile != "/run/secrets/key.pem" {
+		t.Errorf("from the environment: %+v", fromEnv)
+	}
+	if fromEnv.Listen != "127.0.0.1:9443" {
+		t.Errorf("a set listen address is kept: %q", fromEnv.Listen)
 	}
 }
 
