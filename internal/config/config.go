@@ -42,6 +42,9 @@ type Config struct {
 	PublicURL string
 	// Key seals the relay's state and codes.
 	Key []byte
+	// HideInfoPage turns off the front page that lists the services and their callback URLs (info_page: false).
+	// GET / then answers as any unknown path does.
+	HideInfoPage bool
 	// Providers holds the configured providers by name.
 	Providers map[string]Provider
 }
@@ -79,6 +82,7 @@ type fileConfig struct {
 	PublicURL string                   `yaml:"public_url"`
 	Key       string                   `yaml:"key"`
 	KeyFile   string                   `yaml:"key_file"`
+	InfoPage  *bool                    `yaml:"info_page"`
 	Providers map[string]*fileProvider `yaml:"providers"`
 }
 
@@ -124,6 +128,13 @@ func Load(getenv func(string) string, readFile func(string) ([]byte, error)) (*C
 	env("LISTEN", &fc.Listen)
 	env("TLS_CERT_FILE", &fc.TLS.CertFile)
 	env("TLS_KEY_FILE", &fc.TLS.KeyFile)
+	if v := getenv(EnvPrefix + "INFO_PAGE"); v != "" {
+		b, err := strconv.ParseBool(v)
+		if err != nil {
+			return nil, fmt.Errorf("%sINFO_PAGE: %q isn't true or false", EnvPrefix, v)
+		}
+		fc.InfoPage = &b
+	}
 	env("PUBLIC_URL", &fc.PublicURL)
 	env("KEY", &fc.Key)
 	env("KEY_FILE", &fc.KeyFile)
@@ -158,6 +169,9 @@ func Load(getenv func(string) string, readFile func(string) ([]byte, error)) (*C
 		TLSCertFile: strings.TrimSpace(fc.TLS.CertFile),
 		TLSKeyFile:  strings.TrimSpace(fc.TLS.KeyFile),
 		Providers:   map[string]Provider{},
+	}
+	if fc.InfoPage != nil {
+		cfg.HideInfoPage = !*fc.InfoPage
 	}
 	if (cfg.TLSCertFile == "") != (cfg.TLSKeyFile == "") {
 		return nil, errors.New("tls: cert_file and key_file go together; set both to serve HTTPS, or neither to serve plain HTTP behind a proxy")

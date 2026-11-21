@@ -4,12 +4,15 @@ import (
 	"bytes"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net"
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -196,6 +199,42 @@ func TestHealthcheck(t *testing.T) {
 			t.Errorf("%d %q", code, out)
 		}
 	})
+}
+
+func TestTheStartLinesListTheCallbacks(t *testing.T) {
+	for _, page := range []string{"true", "false"} {
+		e := relayEnv(":8080", "", "")
+		e["FUDGE_OAUTH_INFO_PAGE"] = page
+		e["FUDGE_OAUTH_LINEAR_CLIENT_ID"] = "id"
+		e["FUDGE_OAUTH_LINEAR_CLIENT_SECRET"] = "secret"
+		cfg, err := config.Load(e.getenv, readFile)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var logs bytes.Buffer
+		logStart(slog.New(slog.NewJSONHandler(&logs, nil)), cfg)
+		var services []string
+		infoPage := ""
+		for _, line := range strings.Split(strings.TrimSpace(logs.String()), "\n") {
+			var entry map[string]any
+			if err := json.Unmarshal([]byte(line), &entry); err != nil {
+				t.Fatal(err)
+			}
+			switch entry["msg"] {
+			case "listening":
+				infoPage = fmt.Sprint(entry["info_page"])
+			case "service":
+				services = append(services, fmt.Sprint(entry["provider"], " ", entry["callback"]))
+			}
+		}
+		want := []string{"github https://oauth.example.com/github/callback", "linear https://oauth.example.com/linear/callback"}
+		if !slices.Equal(services, want) || infoPage != page {
+			t.Errorf("info_page %s: %s", page, logs.String())
+		}
+		if strings.Contains(logs.String(), "secret") || strings.Contains(logs.String(), testKey) {
+			t.Errorf("the start lines show a secret: %s", logs.String())
+		}
+	}
 }
 
 func TestHealthURL(t *testing.T) {

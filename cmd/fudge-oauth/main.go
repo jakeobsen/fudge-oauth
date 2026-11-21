@@ -62,7 +62,7 @@ func serve() error {
 	defer stop()
 	failed := make(chan error, 1)
 	go func() { failed <- run(server, listener, cfg.TLS()) }()
-	log.Info("listening", "addr", cfg.Listen, "tls", cfg.TLS(), "public_url", cfg.PublicURL, "providers", strings.Join(cfg.Names(), ","))
+	logStart(log, cfg)
 
 	select {
 	case err := <-failed:
@@ -76,6 +76,16 @@ func serve() error {
 		return err
 	}
 	return nil
+}
+
+// logStart logs where the relay listens, then one line per service it offers with the callback URL to register,
+// whether or not the front page lists them. These are built only from the public URL and provider names.
+func logStart(log *slog.Logger, cfg *config.Config) {
+	log.Info("listening", "addr", cfg.Listen, "tls", cfg.TLS(), "public_url", cfg.PublicURL,
+		"providers", strings.Join(cfg.Names(), ","), "info_page", !cfg.HideInfoPage)
+	for _, name := range cfg.Names() {
+		log.Info("service", "provider", name, "callback", cfg.CallbackURL(name))
+	}
 }
 
 // newServer returns the relay's server for cfg. When the relay serves HTTPS itself, it serves the configured pair,

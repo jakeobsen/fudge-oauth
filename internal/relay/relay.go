@@ -80,7 +80,10 @@ func New(cfg *config.Config, log *slog.Logger, opts ...Option) (*Server, error) 
 // Handler serves every route, with request logging and the headers every response gets.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /{$}", s.index)
+	if !s.cfg.HideInfoPage {
+		// Without it, GET / answers as any unknown path does.
+		mux.HandleFunc("GET /{$}", s.index)
+	}
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		_, _ = w.Write([]byte("ok\n"))

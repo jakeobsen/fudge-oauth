@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jakeobsen/fudge-oauth/internal/config"
 	"github.com/jakeobsen/fudge-oauth/internal/provider"
 )
 
@@ -713,6 +714,59 @@ func TestIndexHealthAndMethods(t *testing.T) {
 			t.Errorf("%s %s: %d", c.method, c.path, resp.StatusCode)
 		}
 	}
+}
+
+func TestInfoPageOff(t *testing.T) {
+	hidden := newHarnessWith(t, func(c *config.Config) { c.HideInfoPage = true }, "github")
+	shown := newHarness(t, "github")
+
+	type answer struct {
+		status      int
+		contentType string
+		body        string
+	}
+	ask := func(h *harness, method, path string) answer {
+		t.Helper()
+		req, _ := http.NewRequest(method, h.relay.URL+path, nil)
+		resp, err := noRedirects.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		body, _ := io.ReadAll(resp.Body)
+		return answer{resp.StatusCode, resp.Header.Get("Content-Type"), string(body)}
+	}
+
+	// / answers exactly as a path that was never there, whatever the method.
+	for _, method := range []string{http.MethodGet, http.MethodHead, http.MethodPost} {
+		front, unknown := ask(hidden, method, "/"), ask(hidden, method, "/no-such-page")
+		if front != unknown || front.status != http.StatusNotFound {
+			t.Errorf("%s /: %+v; an unknown path: %+v", method, front, unknown)
+		}
+	}
+	if got := ask(shown, http.MethodGet, "/"); got.status != http.StatusOK || !strings.Contains(got.body, "/github/callback") {
+		t.Errorf("with the page on, / answers %+v", got)
+	}
+
+	// Nothing else changes.
+	for _, c := range []struct{ method, path string }{
+		{http.MethodGet, "/healthz"},
+		{http.MethodGet, "/github/authorize"},
+		{http.MethodGet, "/github/callback?state=not-sealed&code=x"},
+		{http.MethodGet, "/github/token"},
+		{http.MethodPost, "/github/token"},
+		{http.MethodPost, "/github/refresh-token"},
+		{http.MethodGet, "/zoom/authorize"},
+	} {
+		if off, on := ask(hidden, c.method, c.path), ask(shown, c.method, c.path); off != on {
+			t.Errorf("%s %s: %+v with the page off, %+v with it on", c.method, c.path, off, on)
+		}
+	}
+	si, code := hidden.signIn(t, "github")
+	if status, body := hidden.post(t, "/github/token", "json", exchangeFields(code, si.verifier)); status != http.StatusOK || body["access_token"] == nil {
+		t.Errorf("a sign-in with the page off: %d %v", status, body)
+	}
+	hidden.checkLogs(t)
 }
 
 func TestLogLines(t *testing.T) {
