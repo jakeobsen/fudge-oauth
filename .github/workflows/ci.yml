@@ -52,4 +52,48 @@ jobs:
           for _ in $(seq 20); do curl -fsS http://127.0.0.1:8080/healthz && break; sleep 1; done
           curl -fsS http://127.0.0.1:8080/ | grep -q 'https://oauth.example.com/github/callback'
           docker exec relay /fudge-oauth healthcheck
-          docker logs relay
+
+      - name: Without the CA certificates, the health check fails
+        run: |
+          # Point Go at no certificates at all, so this needs no network: only the image's own bundle makes it pass.
+          if docker exec -e SSL_CERT_FILE=/nonexistent -e SSL_CERT_DIR=/nonexistent relay /fudge-oauth healthcheck 2> err.txt; then
+            echo "::error::healthcheck passed without CA certificates"; exit 1
+          fi
+          grep -q 'no CA certificates' err.txt
+
+      - name: Serve HTTPS with its own certificate
+        run: |
+          mkdir tls
+          openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -days 1 \
+            -subj /CN=oauth.example.com -addext subjectAltName=DNS:oauth.example.com \
+            -keyout tls/key.pem -out tls/cert.pem
+          chmod 0644 tls/key.pem # readable by the image's user, 65532
+          key="$(openssl rand -base64 32)"
+          docker run -d --name relay-tls -p 127.0.0.1:8443:8443 \
+            -v "$PWD/tls:/tls:ro" \
+            -e FUDGE_OAUTH_TLS_CERT_FILE=/tls/cert.pem \
+            -e FUDGE_OAUTH_TLS_KEY_FILE=/tls/key.pem \
+            -e FUDGE_OAUTH_PUBLIC_URL=https://oauth.example.com \
+            -e FUDGE_OAUTH_KEY="$key" \
+            -e FUDGE_OAUTH_GITHUB_CLIENT_ID=ci \
+            -e FUDGE_OAUTH_GITHUB_CLIENT_SECRET=ci \
+            fudge-oauth:ci
+          for _ in $(seq 20); do curl -fsSk https://127.0.0.1:8443/healthz && break; sleep 1; done
+          curl -fsS --cacert tls/cert.pem --resolve oauth.example.com:8443:127.0.0.1 https://oauth.example.com:8443/ \
+            | grep -q 'https://oauth.example.com/github/callback'
+          docker exec relay-tls /fudge-oauth healthcheck
+
+      - name: The image's own health check passes
+        run: |
+          for _ in $(seq 45); do
+            status="$(docker inspect --format '{{.State.Health.Status}}' relay-tls)"
+            [ "$status" = healthy ] && exit 0
+            sleep 1
+          done
+          echo "::error::relay-tls is $status"; exit 1
+
+      - name: Logs
+        if: always()
+        run: |
+          docker logs relay || true
+          docker logs relay-tls || true
