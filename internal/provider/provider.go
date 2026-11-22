@@ -222,6 +222,50 @@ var Builtin = []Provider{
 		ClientAuth:   ClientAuthBasic,
 		Setup:        "figma.com/developers/apps → your app → OAuth credentials → Redirect URLs; OAuth scopes → the scopes your extensions ask for",
 	},
+	{
+		Name:         "intra42",
+		Title:        "42",
+		AuthorizeURL: "https://api.intra.42.fr/oauth/authorize",
+		TokenURL:     "https://api.intra.42.fr/oauth/token",
+		PKCE:         false,
+		Refresh:      true,
+		Setup:        "profile.intra.42.fr/oauth/applications → your application → Redirect URI; Scopes → the scopes your extensions ask for",
+	},
+	{
+		Name:         "ticktick",
+		Title:        "TickTick",
+		AuthorizeURL: "https://ticktick.com/oauth/authorize",
+		TokenURL:     "https://ticktick.com/oauth/token",
+		PKCE:         false,
+		// TickTick documents only the code grant, but its answers can carry a refresh token, so a refresh goes on
+		// and TickTick decides.
+		Refresh:    true,
+		ClientAuth: ClientAuthBasic,
+		Setup:      "TickTick Developer Center (developer.ticktick.com/manage) → your app → Redirect URL",
+	},
+	{
+		Name:         "zoho",
+		Title:        "Zoho",
+		AuthorizeURL: "https://accounts.zoho.com/oauth/v2/auth",
+		TokenURL:     "https://accounts.zoho.com/oauth/v2/token",
+		PKCE:         false,
+		Refresh:      true,
+		// Zoho gives a refresh token only at a user's first consent unless the sign-in asks for consent again, so
+		// through one app a user's next sign-in would get none.
+		AuthorizeDefaults: map[string]string{"prompt": "consent"},
+		Setup:             "Zoho API Console (api-console.zoho.com) → Server-based Applications → Authorized Redirect URIs",
+	},
+	{
+		Name:         "webflow",
+		Title:        "Webflow",
+		AuthorizeURL: "https://webflow.com/oauth/authorize",
+		TokenURL:     "https://api.webflow.com/oauth/access_token",
+		PKCE:         false,
+		// Its access tokens come without a refresh token.
+		Refresh:   false,
+		TokenBody: BodyJSON,
+		Setup:     "Webflow → Workspace settings → Apps & Integrations → App Development → your App → Data Client → Redirect URI and scopes",
+	},
 }
 
 // Aliases maps a deprecated path name to the provider it now stands for. They work for one release, and the

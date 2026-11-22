@@ -467,6 +467,30 @@ func codeShape(name, access, refresh string) map[string]any {
 			"user_id_string": "1234567890123456789", "access_token": access, "token_type": "bearer",
 			"expires_in": 7776000, "refresh_token": refresh, "user_id": int64(1234567890123456789),
 		}
+	case "intra42":
+		// The example answer in an unofficial public copy of 42's guides, which need a 42 login. refresh_token is
+		// inferred, and secret_valid_until (when the app's secret lapses) is from a third-party example answer.
+		return map[string]any{
+			"access_token": access, "token_type": "bearer", "expires_in": 7200, "refresh_token": refresh,
+			"scope": "public profile", "created_at": 1700000000, "secret_valid_until": 1702592000,
+		}
+	case "ticktick":
+		// TickTick documents only access_token. The other fields follow a third-party example, 180 days is the
+		// extension's own figure, and refresh_token is inferred.
+		return map[string]any{
+			"access_token": access, "token_type": "bearer", "expires_in": 15552000, "scope": "tasks:read tasks:write",
+			"refresh_token": refresh,
+		}
+	case "zoho":
+		// The Zoho Mail OAuth page's example: one-hour access tokens, and the domain to call the APIs at.
+		return map[string]any{
+			"access_token": access, "refresh_token": refresh, "scope": "ZohoMail.accounts.READ ZohoMail.folders.READ ZohoMail.messages.READ ZohoMail.messages.UPDATE ZohoMail.organization.accounts.READ ZohoMail.organization.domains.READ ZohoMail.partner.organization.READ",
+			"api_domain": "https://www.zohoapis.com", "token_type": "Bearer", "expires_in": 3600,
+		}
+	case "webflow":
+		// Webflow documents no answer beyond the access_token its SDK reads, so token_type is inferred. No
+		// expires_in and no refresh_token: no page documents either.
+		return map[string]any{"access_token": access, "token_type": "bearer"}
 	}
 	panic(name)
 }
@@ -478,6 +502,9 @@ func refreshShape(name, access, refresh string) map[string]any {
 	case "figma":
 		// Figma's refresh answer has no refresh token: the one the client has can be used again.
 		return map[string]any{"access_token": access, "token_type": "bearer", "expires_in": 7776000}
+	case "zoho":
+		// Zoho's refresh page's example: no refresh token, since Zoho's are used again.
+		return map[string]any{"access_token": access, "api_domain": "https://www.zohoapis.com", "token_type": "Bearer", "expires_in": 3600}
 	}
 	return codeShape(name, access, refresh)
 }
