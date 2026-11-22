@@ -4,8 +4,6 @@ The sign-in server for [Fudge](https://github.com/jakeobsen/fudge), the Raycast-
 
 Many Raycast extensions sign in to services such as GitHub, Linear or Slack with OAuth. Signing in needs an OAuth app registered with each service, and that app's client secret can't ship inside an app everyone downloads. fudge-oauth holds the OAuth apps and their secrets, and Fudge signs in through it. Run your own for your company, or use Fudge's.
 
-The privacy policy for Fudge's relay is at <https://jakeobsen.github.io/fudge-oauth/privacy>.
-
 It keeps nothing: no database and no sessions. What a sign-in needs between steps travels encrypted in the OAuth `state` and `code`. It never logs a code, token, secret or verifier.
 
 ## Services

@@ -15,7 +15,6 @@ fudge-oauth is the OAuth sign-in relay for Fudge (`jakeobsen/fudge`), a macOS la
 - `internal/testcert`: self-signed certificates for tests.
 - `internal/seal`: AES-256-GCM sealing. The expiry is inside the ciphertext, and the purpose is the additional data. The relay's purposes are `state/<provider>` and `code/<provider>` (`purpose` in `relay.go`), so a sealed state never opens as a code, nor either at another provider's endpoints. Output is unpadded base64url.
 - `internal/relay`: the HTTP handlers (`relay.go`), the token exchange with the provider (`exchange.go`), and the pages and request logging (`pages.go`). The front page (`GET /`, `index`) is registered only while `info_page` is on (`Config.HideInfoPage` false, the zero value), so with it off `/` answers exactly as any unknown path does.
-- `docs/`: the GitHub Pages site, with the privacy policy for the relay jakeobsen runs for Fudge.
 
 ## The flow
 
@@ -31,7 +30,6 @@ fudge-oauth is the OAuth sign-in relay for Fudge (`jakeobsen/fudge`), a macOS la
 
 - **Never log secrets.** Request logs carry only the path (never the query), the provider, the status and the duration. Other log lines carry the provider and an upstream status. Never log a body, a query string, a header, an error that might quote one, or a config value other than the listen address, public URL and provider names. At start (`logStart` in `main`) it also logs one line per service with its callback URL, built from those alone. `checkLogs` in the tests greps the log for every secret, code, state, verifier and token a test saw; keep it in each new flow test.
 - **Nothing is stored.** No database, no cache, no sessions. Anything a later step needs goes into a sealed value.
-- A change to what the relay logs or keeps also updates `docs/privacy.md` and its date.
 - Standard library first. The one dependency is `go.yaml.in/yaml/v3`. A new one must be pinned and AGPL-compatible, and clearly worth it.
 - Error pages are `html/template`, so a provider name from the path is escaped. Token endpoints answer OAuth-style JSON errors (`error`, `error_description`), which `OAuthService` shows in its error message.
 - Conventional commits (`feat: …`, `fix: …`, `test: …`, `ci: …`, `docs: …`).
