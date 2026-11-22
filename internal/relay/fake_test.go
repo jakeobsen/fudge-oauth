@@ -446,13 +446,38 @@ func codeShape(name, access, refresh string) map[string]any {
 	case "moneybird":
 		// The Moneybird authentication page's example: no expires_in while tokens don't expire.
 		return map[string]any{"access_token": access, "token_type": "bearer", "refresh_token": refresh, "scope": "time_entries sales_invoices settings", "created_at": 1700000000}
+	case "freeagent":
+		// The FreeAgent OAuth page's example (dev.freeagent.com/docs/oauth).
+		return map[string]any{"access_token": access, "token_type": "bearer", "expires_in": 3600, "refresh_token": refresh, "refresh_token_expires_in": 631151957}
+	case "mollie":
+		// The Mollie generate-tokens page's example (docs.mollie.com/reference/oauth-generate-tokens).
+		return map[string]any{"access_token": access, "refresh_token": refresh, "expires_in": 3600, "token_type": "bearer", "scope": "payments.read organizations.read"}
+	case "plane":
+		// The Plane choose-token-flow page's example, with the extension's scope.
+		return map[string]any{"access_token": access, "refresh_token": refresh, "token_type": "Bearer", "expires_in": 86400, "scope": "read write"}
+	case "homey":
+		// Not quite as documented, on purpose: Homey's HTTP specification shows expires_in as the string "3660",
+		// while homey-api's Token documents a number. The fake keeps a number, which is what the relay passes on
+		// as it is today; a sign-in against Homey itself settles which it sends.
+		return map[string]any{"token_type": "bearer", "grant_type": "authorization_code", "access_token": access, "refresh_token": refresh, "expires_in": 3660}
+	case "figma":
+		// The Figma OAuth apps page's answer, 90-day access tokens (inferred), and the deprecated numeric user_id:
+		// Figma's user ids don't fit a float64, so the relay must pass a number above 2^53 through exactly.
+		return map[string]any{
+			"user_id_string": "1234567890123456789", "access_token": access, "token_type": "bearer",
+			"expires_in": 7776000, "refresh_token": refresh, "user_id": int64(1234567890123456789),
+		}
 	}
 	panic(name)
 }
 
 func refreshShape(name, access, refresh string) map[string]any {
-	if name == "slack" {
+	switch name {
+	case "slack":
 		return map[string]any{"ok": true, "access_token": access, "token_type": "user", "refresh_token": refresh, "expires_in": 43200}
+	case "figma":
+		// Figma's refresh answer has no refresh token: the one the client has can be used again.
+		return map[string]any{"access_token": access, "token_type": "bearer", "expires_in": 7776000}
 	}
 	return codeShape(name, access, refresh)
 }

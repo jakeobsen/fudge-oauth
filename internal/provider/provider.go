@@ -1,8 +1,9 @@
 // Package provider holds the built-in OAuth providers: the seven that
 // @raycast/utils' OAuthService knows (GitHub, Linear, Slack, Asana, Google,
-// Atlassian for Jira and Confluence, and Zoom), five that store extensions reach
-// through Raycast's other sign-in servers (Notion, Todoist, Basecamp, Gumroad and
-// Moneybird), and how the relay talks to each.
+// Atlassian for Jira and Confluence, and Zoom), ten that store extensions reach
+// through Raycast's other sign-in servers (Notion, Todoist, Basecamp, Gumroad,
+// Moneybird, FreeAgent, Mollie, Plane, Homey and Figma), and how the relay talks to
+// each.
 package provider
 
 import "slices"
@@ -171,6 +172,55 @@ var Builtin = []Provider{
 		PKCE:         false,
 		Refresh:      true,
 		Setup:        "moneybird.com/user/applications/new → External OAuth application → Redirect URI",
+	},
+	{
+		Name:         "freeagent",
+		Title:        "FreeAgent",
+		AuthorizeURL: "https://api.freeagent.com/v2/approve_app",
+		TokenURL:     "https://api.freeagent.com/v2/token_endpoint",
+		PKCE:         false,
+		Refresh:      true,
+		ClientAuth:   ClientAuthBasic,
+		Setup:        "FreeAgent Developer Dashboard (dev.freeagent.com) → My Apps → your app → Redirect URIs",
+	},
+	{
+		Name:         "mollie",
+		Title:        "Mollie",
+		AuthorizeURL: "https://my.mollie.com/oauth2/authorize",
+		TokenURL:     "https://api.mollie.com/oauth2/tokens",
+		PKCE:         false,
+		Refresh:      true,
+		ClientAuth:   ClientAuthBasic,
+		Setup:        "Mollie → Developers → Your apps → Create application → Redirect URL",
+	},
+	{
+		Name:         "plane",
+		Title:        "Plane",
+		AuthorizeURL: "https://api.plane.so/auth/o/authorize-app/",
+		TokenURL:     "https://api.plane.so/auth/o/token/",
+		PKCE:         false,
+		Refresh:      true,
+		Setup:        "Plane → Workspace settings → Integrations → Build your own → Redirect URI; Scopes & Permissions → the scopes your extensions ask for",
+	},
+	{
+		Name:         "homey",
+		Title:        "Homey",
+		AuthorizeURL: "https://api.athom.com/oauth2/authorise",
+		TokenURL:     "https://api.athom.com/oauth2/token",
+		PKCE:         false,
+		Refresh:      true,
+		ClientAuth:   ClientAuthBasic,
+		Setup:        "Homey Developer Tools (tools.developer.homey.app/api/clients) → your Web API client → Redirect URI",
+	},
+	{
+		Name:         "figma",
+		Title:        "Figma",
+		AuthorizeURL: "https://www.figma.com/oauth",
+		TokenURL:     "https://api.figma.com/v1/oauth/token",
+		PKCE:         true,
+		Refresh:      true,
+		ClientAuth:   ClientAuthBasic,
+		Setup:        "figma.com/developers/apps → your app → OAuth credentials → Redirect URLs; OAuth scopes → the scopes your extensions ask for",
 	},
 }
 

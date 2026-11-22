@@ -10,9 +10,10 @@ func TestBuiltin(t *testing.T) {
 	want := []string{
 		"github", "linear", "slack", "asana", "google", "atlassian", "zoom",
 		"notion", "todoist", "basecamp", "gumroad", "moneybird",
+		"freeagent", "mollie", "plane", "homey", "figma",
 	}
 	if got := Names(); !slices.Equal(got, want) {
-		t.Fatalf("Names() = %v, want OAuthService's seven, then the five behind Raycast's other sign-in servers: %v", got, want)
+		t.Fatalf("Names() = %v, want OAuthService's seven, then the ten behind Raycast's other sign-in servers: %v", got, want)
 	}
 	for _, p := range Builtin {
 		for _, raw := range []string{p.AuthorizeURL, p.TokenURL} {
@@ -56,7 +57,7 @@ func TestDirectProvidersMatchOAuthService(t *testing.T) {
 	}
 }
 
-// The five services store extensions reach through Raycast's other sign-in
+// The ten services store extensions reach through Raycast's other sign-in
 // servers (FUD-166), as each service documents them.
 func TestServicesBehindRaycastsOtherSignInServers(t *testing.T) {
 	for _, want := range []Provider{
@@ -96,6 +97,48 @@ func TestServicesBehindRaycastsOtherSignInServers(t *testing.T) {
 			Name: "moneybird", AuthorizeURL: "https://moneybird.com/oauth/authorize",
 			TokenURL: "https://moneybird.com/oauth/token", PKCE: false, Refresh: true,
 			ClientAuth: ClientAuthBody, TokenBody: BodyForm,
+		},
+		// https://dev.freeagent.com/docs/oauth: HTTP Basic, refresh tokens, no PKCE.
+		// Its examples label a form body as JSON, so the form body is inferred: FreeAgent
+		// implements OAuth 2.0 Draft 22, whose token requests are form-encoded, and its
+		// quick start drives it from Google's OAuth 2.0 Playground.
+		{
+			Name: "freeagent", AuthorizeURL: "https://api.freeagent.com/v2/approve_app",
+			TokenURL: "https://api.freeagent.com/v2/token_endpoint", PKCE: false, Refresh: true,
+			ClientAuth: ClientAuthBasic, TokenBody: BodyForm,
+		},
+		// https://docs.mollie.com/reference/authorize-endpoint and
+		// https://docs.mollie.com/reference/oauth-generate-tokens: HTTP Basic, a form
+		// body (or JSON), refresh tokens that don't expire, no PKCE.
+		{
+			Name: "mollie", AuthorizeURL: "https://my.mollie.com/oauth2/authorize",
+			TokenURL: "https://api.mollie.com/oauth2/tokens", PKCE: false, Refresh: true,
+			ClientAuth: ClientAuthBasic, TokenBody: BodyForm,
+		},
+		// https://developers.plane.so/dev-tools/build-plane-app/choose-token-flow: the
+		// user-token flow, client_id and client_secret in a form body, refresh tokens,
+		// no PKCE.
+		{
+			Name: "plane", AuthorizeURL: "https://api.plane.so/auth/o/authorize-app/",
+			TokenURL: "https://api.plane.so/auth/o/token/", PKCE: false, Refresh: true,
+			ClientAuth: ClientAuthBody, TokenBody: BodyForm,
+		},
+		// https://api.developer.homey.app/http-and-socket.io/http-specification.md: HTTP
+		// Basic, a form body, refresh tokens, no PKCE.
+		{
+			Name: "homey", AuthorizeURL: "https://api.athom.com/oauth2/authorise",
+			TokenURL: "https://api.athom.com/oauth2/token", PKCE: false, Refresh: true,
+			ClientAuth: ClientAuthBasic, TokenBody: BodyForm,
+		},
+		// https://developers.figma.com/docs/rest-api/oauth-apps/: HTTP Basic, a form
+		// body, refresh tokens, PKCE (S256) recommended. That page refreshes at
+		// /v1/oauth/refresh; the changelog of May 16, 2025
+		// (https://developers.figma.com/docs/rest-api/changelog/) says to refresh at the
+		// token URL, as the relay does.
+		{
+			Name: "figma", AuthorizeURL: "https://www.figma.com/oauth",
+			TokenURL: "https://api.figma.com/v1/oauth/token", PKCE: true, Refresh: true,
+			ClientAuth: ClientAuthBasic, TokenBody: BodyForm,
 		},
 	} {
 		got, ok := Lookup(want.Name)
