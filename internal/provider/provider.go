@@ -49,6 +49,14 @@ type Provider struct {
 	// AuthorizeDefaults are authorize parameters the relay adds when the extension didn't send them: what
 	// Raycast's proxy adds for the provider (Atlassian's), or what the relay's own app needs (Zoho's).
 	AuthorizeDefaults map[string]string
+	// CodeParams are parameters the relay adds to every code exchange (Tesla's audience). The relay's own always win.
+	CodeParams map[string]string
+	// RefreshParams are parameters the relay adds to every refresh grant (WHOOP's scope=offline). The relay's own
+	// always win.
+	RefreshParams map[string]string
+	// RefreshRedirectURI says whether a refresh grant carries the relay's callback as redirect_uri, as Bangumi and
+	// Wave require.
+	RefreshRedirectURI bool
 	// Setup says where the provider's OAuth apps are registered, for the front page.
 	Setup string
 }

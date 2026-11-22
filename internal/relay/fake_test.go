@@ -7,9 +7,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -339,6 +341,11 @@ func (fp *fakeProvider) token(w http.ResponseWriter, r *http.Request) {
 
 	switch form["grant_type"] {
 	case "authorization_code":
+		names := []string{"grant_type", "code", "redirect_uri"}
+		if fp.def.PKCE {
+			names = append(names, "code_verifier")
+		}
+		fp.checkParams("token", form, names, fp.def.CodeParams)
 		if !fp.codes[form["code"]] {
 			providerRefusal(w, name, "invalid_grant", "The code passed is incorrect or expired.")
 			return
@@ -368,6 +375,14 @@ func (fp *fakeProvider) token(w http.ResponseWriter, r *http.Request) {
 		if !fp.def.Refresh {
 			t.Errorf("%s token: the relay asked to refresh a provider without refresh tokens", name)
 		}
+		names := []string{"grant_type", "refresh_token"}
+		if fp.def.RefreshRedirectURI {
+			names = append(names, "redirect_uri")
+			if form["redirect_uri"] != fp.callback() {
+				t.Errorf("%s refresh: redirect_uri %q, want %q", name, form["redirect_uri"], fp.callback())
+			}
+		}
+		fp.checkParams("refresh", form, names, fp.def.RefreshParams)
 		if !fp.refreshTokens[form["refresh_token"]] {
 			providerRefusal(w, name, "invalid_grant", "Bad refresh token.")
 			return
@@ -378,6 +393,27 @@ func (fp *fakeProvider) token(w http.ResponseWriter, r *http.Request) {
 	default:
 		t.Errorf("%s token: grant_type %q", name, form["grant_type"])
 		providerRefusal(w, name, "unsupported_grant_type", "")
+	}
+}
+
+// checkParams wants a token request to carry exactly the parameters named in want, the client credentials with
+// body credentials, and each of the provider's own parameters for that grant with its value: anything extra or
+// missing is an error, whichever provider it is.
+func (fp *fakeProvider) checkParams(grant string, form map[string]string, want []string, own map[string]string) {
+	t := fp.h.t
+	want = slices.Clone(want)
+	for k, v := range own {
+		want = append(want, k)
+		if form[k] != v {
+			t.Errorf("%s %s: %s %q, want %q", fp.def.Name, grant, k, form[k], v)
+		}
+	}
+	if fp.def.ClientAuth == provider.ClientAuthBody {
+		want = append(want, "client_id", "client_secret")
+	}
+	slices.Sort(want)
+	if got := slices.Sorted(maps.Keys(form)); !slices.Equal(got, want) {
+		t.Errorf("%s %s: parameters %v, want exactly %v", fp.def.Name, grant, got, want)
 	}
 }
 

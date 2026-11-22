@@ -188,11 +188,40 @@ func TestServicesBehindRaycastsOtherSignInServers(t *testing.T) {
 			continue
 		}
 		if got.AuthorizeURL != want.AuthorizeURL || got.TokenURL != want.TokenURL || got.PKCE != want.PKCE ||
-			got.Refresh != want.Refresh || got.ClientAuth != want.ClientAuth || got.TokenBody != want.TokenBody {
+			got.Refresh != want.Refresh || got.ClientAuth != want.ClientAuth || got.TokenBody != want.TokenBody ||
+			got.RefreshRedirectURI != want.RefreshRedirectURI || !maps.Equal(got.CodeParams, want.CodeParams) ||
+			!maps.Equal(got.RefreshParams, want.RefreshParams) {
 			t.Errorf("%s: %+v, want %+v", want.Name, got, want)
 		}
 		if !maps.Equal(got.AuthorizeDefaults, want.AuthorizeDefaults) {
 			t.Errorf("%s: AuthorizeDefaults %v, want %v", want.Name, got.AuthorizeDefaults, want.AuthorizeDefaults)
+		}
+	}
+}
+
+// Each token parameter field is set only for the services whose docs ask for it, and never names a parameter the
+// relay sets itself.
+func TestOnlyTheirProvidersAddTokenParameters(t *testing.T) {
+	refreshRedirectURI := []string{"bangumi", "wave"}
+	refreshParams := map[string]map[string]string{"whoop": {"scope": "offline"}}
+	codeParams := map[string]map[string]string{}
+	relaysOwn := []string{"grant_type", "code", "code_verifier", "redirect_uri", "refresh_token", "client_id", "client_secret"}
+	for _, p := range Builtin {
+		if p.RefreshRedirectURI != slices.Contains(refreshRedirectURI, p.Name) {
+			t.Errorf("%s: RefreshRedirectURI = %v", p.Name, p.RefreshRedirectURI)
+		}
+		if !maps.Equal(p.RefreshParams, refreshParams[p.Name]) {
+			t.Errorf("%s: RefreshParams %v, want %v", p.Name, p.RefreshParams, refreshParams[p.Name])
+		}
+		if !maps.Equal(p.CodeParams, codeParams[p.Name]) {
+			t.Errorf("%s: CodeParams %v, want %v", p.Name, p.CodeParams, codeParams[p.Name])
+		}
+		for _, params := range []map[string]string{p.CodeParams, p.RefreshParams} {
+			for name := range params {
+				if slices.Contains(relaysOwn, name) {
+					t.Errorf("%s: adds %s, which the relay sets itself", p.Name, name)
+				}
+			}
 		}
 	}
 }

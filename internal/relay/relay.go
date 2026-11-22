@@ -12,6 +12,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"log/slog"
+	"maps"
 	"net"
 	"net/http"
 	"net/url"
@@ -393,11 +394,11 @@ func (s *Server) redeem(w http.ResponseWriter, r *http.Request, p config.Provide
 		// A code sealed by a relay from before an upgrade, under the old name, came back to the old callback.
 		callback = s.cfg.CallbackURL(sealedFor)
 	}
-	params := map[string]string{
-		"grant_type":   "authorization_code",
-		"code":         c.Code,
-		"redirect_uri": callback,
-	}
+	params := map[string]string{}
+	maps.Copy(params, p.CodeParams)
+	params["grant_type"] = "authorization_code"
+	params["code"] = c.Code
+	params["redirect_uri"] = callback
 	if c.Verifier != "" {
 		params["code_verifier"] = c.Verifier
 	}
@@ -414,10 +415,15 @@ func (s *Server) refreshGrant(w http.ResponseWriter, r *http.Request, p config.P
 		writeError(w, http.StatusBadRequest, "invalid_request", "refresh_token is missing.")
 		return
 	}
-	s.exchange(w, r, p, map[string]string{
-		"grant_type":    "refresh_token",
-		"refresh_token": token,
-	})
+	params := map[string]string{}
+	maps.Copy(params, p.RefreshParams)
+	if p.RefreshRedirectURI {
+		// The provider's own callback, the one its sign-in was given (authorize, above).
+		params["redirect_uri"] = s.cfg.CallbackURL(p.Name)
+	}
+	params["grant_type"] = "refresh_token"
+	params["refresh_token"] = token
+	s.exchange(w, r, p, params)
 }
 
 // --- helpers ---
