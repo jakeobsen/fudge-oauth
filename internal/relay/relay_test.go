@@ -46,6 +46,16 @@ var extensions = map[string]extension{
 	"google":    {scope: "https://www.googleapis.com/auth/drive.readonly", extras: map[string]string{"access_type": "offline", "prompt": "consent"}},
 	"atlassian": {scope: "read:jira-work offline_access", extras: map[string]string{"audience": "api.atlassian.com", "prompt": "consent"}},
 	"zoom":      {scope: "meeting:write"},
+	// The store's notion extension (notion/src/utils/notion/oauth.ts) sends no scope and owner=user.
+	"notion": {scope: "", extras: map[string]string{"owner": "user"}},
+	// The store's todoist extension (todoist/src/helpers/withTodoistApi.tsx), comma-separated as Todoist wants.
+	"todoist": {scope: "data:read_write,data:delete,project:delete"},
+	// The store's trek extension (trek/src/oauth/auth.tsx) sends no scope and Basecamp's legacy type=web_server.
+	"basecamp": {scope: "", extras: map[string]string{"type": "web_server"}},
+	// The store's gumroad extension (gumroad/src/oauth.ts).
+	"gumroad": {scope: "view_profile view_sales"},
+	// The store's moneybird extension (moneybird/src/oauth/client.ts).
+	"moneybird": {scope: "time_entries sales_invoices settings"},
 }
 
 var encodings = []string{"json", "url-encoded"}
@@ -243,7 +253,7 @@ func TestSignInWithEveryProvider(t *testing.T) {
 					refresh, _ = body["authed_user"].(map[string]any)["refresh_token"].(string)
 				}
 				// OAuthService refreshes at /refresh-token, or at the token URL
-				// for Google, Jira and Zoom; both work.
+				// for Google, Jira, Zoom and Notion; both work.
 				for _, path := range []string{"/refresh-token", "/token"} {
 					status, body = h.post(t, "/"+name+path, enc, refreshFields(refresh))
 					if status != http.StatusOK {

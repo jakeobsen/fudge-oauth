@@ -61,7 +61,7 @@ func (b *syncBuffer) String() string {
 	return b.buf.String()
 }
 
-// newHarness configures the named providers (all seven when none are named).
+// newHarness configures the named providers (all of them when none are named).
 func newHarness(t *testing.T, names ...string) *harness {
 	t.Helper()
 	return newHarnessWith(t, nil, names...)
@@ -425,6 +425,27 @@ func codeShape(name, access, refresh string) map[string]any {
 		return map[string]any{"access_token": access, "expires_in": 3600, "token_type": "Bearer", "refresh_token": refresh, "scope": "read:jira-work offline_access"}
 	case "zoom":
 		return map[string]any{"access_token": access, "token_type": "bearer", "refresh_token": refresh, "expires_in": 3599, "scope": "meeting:write"}
+	case "notion":
+		// Notion's token schema (developers.notion.com/reference/create-a-token): a nested owner and a null pass
+		// through unchanged, and there's no expires_in.
+		return map[string]any{
+			"access_token": access, "token_type": "bearer", "refresh_token": refresh, "bot_id": "b0",
+			"owner":        map[string]any{"type": "user", "user": map[string]any{"object": "user", "id": "u0"}},
+			"workspace_id": "w0", "workspace_name": "Workspace", "workspace_icon": "https://example.com/icon.png",
+			"duplicated_template_id": nil,
+		}
+	case "todoist":
+		// One-hour access tokens with a rotating refresh token (developer.todoist.com/api/v1/).
+		return map[string]any{"access_token": access, "token_type": "Bearer", "expires_in": 3600, "refresh_token": refresh}
+	case "basecamp":
+		// The bc3 authentication page's example: two-week access tokens.
+		return map[string]any{"access_token": access, "token_type": "Bearer", "expires_in": 1209600, "refresh_token": refresh}
+	case "gumroad":
+		// Doorkeeper's default answer: access tokens that don't expire, so no expires_in.
+		return map[string]any{"access_token": access, "token_type": "Bearer", "refresh_token": refresh, "scope": "view_profile view_sales", "created_at": 1700000000}
+	case "moneybird":
+		// The Moneybird authentication page's example: no expires_in while tokens don't expire.
+		return map[string]any{"access_token": access, "token_type": "bearer", "refresh_token": refresh, "scope": "time_entries sales_invoices settings", "created_at": 1700000000}
 	}
 	panic(name)
 }
