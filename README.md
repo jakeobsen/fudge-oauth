@@ -8,7 +8,7 @@ It keeps nothing: no database and no sessions. What a sign-in needs between step
 
 ## Services
 
-The seven that `@raycast/utils`' `OAuthService` has built in, and five that store extensions reach through Raycast's other sign-in servers:
+The seven that `@raycast/utils`' `OAuthService` has built in, and ten that store extensions reach through Raycast's other sign-in servers:
 
 | Service | Path | Where to register the OAuth app |
 |---|---|---|
@@ -24,10 +24,26 @@ The seven that `@raycast/utils`' `OAuthService` has built in, and five that stor
 | Basecamp | `basecamp` | launchpad.37signals.com/integrations → your application → Redirect URI |
 | Gumroad | `gumroad` | Gumroad → Settings → Advanced → Applications → your application → Redirect URI |
 | Moneybird | `moneybird` | moneybird.com/user/applications/new → External OAuth application → Redirect URI |
+| FreeAgent | `freeagent` | FreeAgent Developer Dashboard (dev.freeagent.com) → My Apps → your app → Redirect URIs |
+| Mollie | `mollie` | Mollie → Developers → Your apps → Create application → Redirect URL |
+| Plane | `plane` | Plane → Workspace settings → Integrations → Build your own → Redirect URI; Scopes & Permissions → the scopes your extensions ask for |
+| Homey | `homey` | Homey Developer Tools (tools.developer.homey.app/api/clients) → your Web API client → Redirect URI |
+| Figma | `figma` | figma.com/developers/apps → your app → OAuth credentials → Redirect URLs; OAuth scopes → the scopes your extensions ask for |
 
 Configure only the ones you want to offer.
 
 **Atlassian** covers Jira and Confluence with one app. fudge-oauth adds `audience=api.atlassian.com` and `prompt=consent` to its sign-ins when an extension doesn't send them, as Raycast's Jira server does. Until v0.3.0 its path was `jira`: `providers.jira`, `FUDGE_OAUTH_JIRA_*` and `/jira/…` still work for this release, with a note in the log at start, and a sign-in begun before the upgrade still completes. Register `<public_url>/atlassian/callback` as the app's callback URL; it's the one fudge-oauth sends, whichever path a sign-in starts at. Where both names are set, `atlassian` wins.
+
+## Confirmed integrations
+
+These services have been tested with a real sign-in:
+
+- GitHub
+- Atlassian (Jira and Confluence)
+
+The other services are added from each service's docs and presumed to work, and they're tested against the relay's fakes.
+Only the services listed here are confirmed.
+A service joins this list once someone has signed in with it for real.
 
 ## Setting it up
 
