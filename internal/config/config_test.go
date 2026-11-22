@@ -2,10 +2,14 @@ package config
 
 import (
 	"errors"
+	"fmt"
 	"io/fs"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/jakeobsen/fudge-oauth/internal/provider"
 )
 
 const testKey = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=" // bytes 0…31
@@ -394,5 +398,60 @@ func TestJiraConfiguresAtlassian(t *testing.T) {
 			"FUDGE_OAUTH_ATLASSIAN_CLIENT_ID": "new-id", "FUDGE_OAUTH_ATLASSIAN_CLIENT_SECRET": "secret-2",
 		}), nil)
 		check(t, cfg, err, "new-id")
+	})
+}
+
+// Loading a service sets the relay's client id and secret, and only the endpoints and PKCE the file names: every
+// other field stays the built-in's (its authorize defaults, token parameters, client auth and body encoding).
+func TestLoadKeepsBuiltinFields(t *testing.T) {
+	vars := map[string]string{
+		"FUDGE_OAUTH_CONFIG": "/c.yaml", "FUDGE_OAUTH_PUBLIC_URL": "https://oauth.example.com", "FUDGE_OAUTH_KEY": testKey,
+	}
+	loadOne := func(t *testing.T, name, extra string) Provider {
+		t.Helper()
+		cfg, err := load(t, vars, map[string]string{
+			"/c.yaml": "providers:\n  " + name + ":\n    client_id: id-1\n    client_secret: secret-1\n" + extra,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		canonical := provider.Canonical(name)
+		if got := cfg.Names(); !slices.Equal(got, []string{canonical}) {
+			t.Fatalf("Names = %q, want [%s]", got, canonical)
+		}
+		p := cfg.Providers[canonical]
+		if p.ClientID != "id-1" || p.ClientSecret != "secret-1" {
+			t.Errorf("client_id %q, client_secret set %t", p.ClientID, p.ClientSecret == "secret-1")
+		}
+		return p
+	}
+
+	// Every built-in service, and a deprecated name, which loads as the service it names.
+	names := provider.Names()
+	if aliases := sortedAliases(); len(aliases) > 0 {
+		names = append(names, aliases[0])
+	}
+	for _, name := range names {
+		t.Run(name, func(t *testing.T) {
+			want, ok := provider.Lookup(provider.Canonical(name))
+			if !ok {
+				t.Fatalf("no built-in %s", provider.Canonical(name))
+			}
+			if got := loadOne(t, name, "").Provider; !reflect.DeepEqual(got, want) {
+				t.Errorf("loaded as\n%+v\nwant the built-in\n%+v", got, want)
+			}
+		})
+	}
+
+	t.Run("authorize_url, token_url and pkce from the file", func(t *testing.T) {
+		want, _ := provider.Lookup("atlassian")
+		want.AuthorizeURL = "https://auth.example.com/authorize?audience=api.example.com"
+		want.TokenURL = "https://auth.example.com/oauth/token"
+		want.PKCE = !want.PKCE
+		got := loadOne(t, "atlassian", fmt.Sprintf("    authorize_url: %s\n    token_url: %s\n    pkce: %t\n",
+			want.AuthorizeURL, want.TokenURL, want.PKCE)).Provider
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("loaded as\n%+v\nwant\n%+v", got, want)
+		}
 	})
 }
