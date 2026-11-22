@@ -8,7 +8,7 @@ It keeps nothing: no database and no sessions. What a sign-in needs between step
 
 ## Services
 
-The seven that `@raycast/utils`' `OAuthService` has built in, and fourteen that store extensions reach through Raycast's other sign-in servers:
+The seven that `@raycast/utils`' `OAuthService` has built in, and eighteen that store extensions reach through Raycast's other sign-in servers:
 
 | Service | Path | Where to register the OAuth app |
 |---|---|---|
@@ -33,6 +33,10 @@ The seven that `@raycast/utils`' `OAuthService` has built in, and fourteen that 
 | TickTick | `ticktick` | TickTick Developer Center (developer.ticktick.com/manage) → your app → Redirect URL |
 | Zoho | `zoho` | Zoho API Console (api-console.zoho.com) → Server-based Applications → Authorized Redirect URIs |
 | Webflow | `webflow` | Webflow → Workspace settings → Apps & Integrations → App Development → your App → Data Client → Redirect URI and scopes |
+| Bangumi | `bangumi` | bgm.tv/dev/app → your app → callback URL |
+| Wave | `wave` | Wave Developer Portal → Manage Applications → your application → Redirect URIs |
+| WHOOP | `whoop` | WHOOP Developer Dashboard (developer-dashboard.whoop.com) → your app → Redirect URLs; Scopes → the scopes your extensions ask for |
+| Miro | `miro` | Miro → Settings → Your apps → Create new app (Expire user authorization token on) → Redirect URI; Permissions → boards:read and boards:write |
 
 Configure only the ones you want to offer.
 

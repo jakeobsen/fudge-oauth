@@ -1,9 +1,9 @@
 // Package provider holds the built-in OAuth providers: the seven that
 // @raycast/utils' OAuthService knows (GitHub, Linear, Slack, Asana, Google,
-// Atlassian for Jira and Confluence, and Zoom), fourteen that store extensions
+// Atlassian for Jira and Confluence, and Zoom), eighteen that store extensions
 // reach through Raycast's other sign-in servers (Notion, Todoist, Basecamp,
-// Gumroad, Moneybird, FreeAgent, Mollie, Plane, Homey, Figma, 42, TickTick, Zoho
-// and Webflow), and how the relay talks to each.
+// Gumroad, Moneybird, FreeAgent, Mollie, Plane, Homey, Figma, 42, TickTick, Zoho,
+// Webflow, Bangumi, Wave, WHOOP and Miro), and how the relay talks to each.
 package provider
 
 import "slices"
