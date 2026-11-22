@@ -1,6 +1,8 @@
 // Package provider holds the built-in OAuth providers: the seven that
 // @raycast/utils' OAuthService knows (GitHub, Linear, Slack, Asana, Google,
-// Atlassian for Jira and Confluence, and Zoom), and how the relay talks to each.
+// Atlassian for Jira and Confluence, and Zoom), five that store extensions reach
+// through Raycast's other sign-in servers (Notion, Todoist, Basecamp, Gumroad and
+// Moneybird), and how the relay talks to each.
 package provider
 
 import "slices"
@@ -121,6 +123,54 @@ var Builtin = []Provider{
 		Refresh:      true,
 		ClientAuth:   ClientAuthBasic,
 		Setup:        "Zoom App Marketplace → Develop → your app → OAuth Redirect URL and OAuth allow list",
+	},
+	{
+		Name:         "notion",
+		Title:        "Notion",
+		AuthorizeURL: "https://api.notion.com/v1/oauth/authorize",
+		TokenURL:     "https://api.notion.com/v1/oauth/token",
+		PKCE:         false,
+		Refresh:      true,
+		ClientAuth:   ClientAuthBasic,
+		TokenBody:    BodyJSON,
+		Setup:        "Notion developer portal → Developer connections → New connection (OAuth, installable in any workspace) → OAuth Domain & URIs",
+	},
+	{
+		Name:         "todoist",
+		Title:        "Todoist",
+		AuthorizeURL: "https://app.todoist.com/oauth/authorize",
+		TokenURL:     "https://api.todoist.com/oauth/access_token",
+		PKCE:         false,
+		Refresh:      true,
+		Setup:        "Todoist → Settings → Integrations → App Management → your app → OAuth redirect URL",
+	},
+	{
+		Name:         "basecamp",
+		Title:        "Basecamp",
+		AuthorizeURL: "https://launchpad.37signals.com/authorization/new",
+		TokenURL:     "https://launchpad.37signals.com/authorization/token",
+		PKCE:         false,
+		Refresh:      true,
+		Setup:        "launchpad.37signals.com/integrations → your application → Redirect URI",
+	},
+	{
+		Name:         "gumroad",
+		Title:        "Gumroad",
+		AuthorizeURL: "https://gumroad.com/oauth/authorize",
+		TokenURL:     "https://gumroad.com/oauth/token",
+		PKCE:         false,
+		// Its access tokens don't expire, so they're never refreshed, but it issues refresh tokens all the same.
+		Refresh: true,
+		Setup:   "Gumroad → Settings → Advanced → Applications → your application → Redirect URI",
+	},
+	{
+		Name:         "moneybird",
+		Title:        "Moneybird",
+		AuthorizeURL: "https://moneybird.com/oauth/authorize",
+		TokenURL:     "https://moneybird.com/oauth/token",
+		PKCE:         false,
+		Refresh:      true,
+		Setup:        "moneybird.com/user/applications/new → External OAuth application → Redirect URI",
 	},
 }
 

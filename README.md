@@ -8,7 +8,7 @@ It keeps nothing: no database and no sessions. What a sign-in needs between step
 
 ## Services
 
-The seven that `@raycast/utils`' `OAuthService` has built in:
+The seven that `@raycast/utils`' `OAuthService` has built in, and five that store extensions reach through Raycast's other sign-in servers:
 
 | Service | Path | Where to register the OAuth app |
 |---|---|---|
@@ -19,6 +19,11 @@ The seven that `@raycast/utils`' `OAuthService` has built in:
 | Google | `google` | Google Cloud console → APIs & Services → Credentials → OAuth client ID (Web application) → Authorized redirect URIs |
 | Atlassian (Jira, Confluence) | `atlassian` | developer.atlassian.com → Developer console → your app → Authorization → OAuth 2.0 (3LO) → Callback URL; Permissions → the Jira and Confluence API scopes your extensions ask for |
 | Zoom | `zoom` | Zoom App Marketplace → Develop → your app → OAuth Redirect URL, and the OAuth allow list |
+| Notion | `notion` | Notion developer portal → Developer connections → New connection (OAuth, installable in any workspace) → OAuth Domain & URIs |
+| Todoist | `todoist` | Todoist → Settings → Integrations → App Management → your app → OAuth redirect URL |
+| Basecamp | `basecamp` | launchpad.37signals.com/integrations → your application → Redirect URI |
+| Gumroad | `gumroad` | Gumroad → Settings → Advanced → Applications → your application → Redirect URI |
+| Moneybird | `moneybird` | moneybird.com/user/applications/new → External OAuth application → Redirect URI |
 
 Configure only the ones you want to offer.
 
@@ -115,7 +120,7 @@ fudge-oauth answers at the same paths as Raycast's sign-in servers, and Fudge se
 1. `GET /<path>/authorize`: Fudge opens this in the browser, with a PKCE challenge and a redirect back to Fudge on `127.0.0.1` or `[::1]` (nothing else is accepted). fudge-oauth seals those into the `state` and sends the browser to the service with its own client ID. Where the service supports PKCE, fudge-oauth uses its own verifier with it, which rides inside the sealed state and code.
 2. `GET /<path>/callback`: the service comes back here. fudge-oauth seals the service's code, and sends the browser back to Fudge with it.
 3. `POST /<path>/token`: Fudge exchanges that code, proving with the PKCE verifier that it started the sign-in. fudge-oauth exchanges the service's code with its secret and returns the tokens.
-4. `POST /<path>/refresh-token`: refreshes a token the same way. `/token` takes a refresh too, since that's where Google, Atlassian and Zoom refresh. GitHub's OAuth apps issue no refresh tokens, so GitHub answers 400.
+4. `POST /<path>/refresh-token`: refreshes a token the same way. `/token` takes a refresh too, since that's where Google, Atlassian, Zoom and Notion refresh. GitHub's OAuth apps issue no refresh tokens, so GitHub answers 400.
 
 Sealed values are bound to their kind and service: a state never works as a code, nor at another service's paths. A sealed state lasts 10 minutes, a sealed code 5. `GET /healthz` answers 200.
 

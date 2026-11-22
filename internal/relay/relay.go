@@ -335,7 +335,7 @@ func (s *Server) tokenRequest(w http.ResponseWriter, r *http.Request) (config.Pr
 }
 
 // token redeems a code. It refreshes too, since OAuthService refreshes Google,
-// Atlassian and Zoom at their token URL.
+// Atlassian, Zoom and Notion at their token URL.
 func (s *Server) token(w http.ResponseWriter, r *http.Request) {
 	p, form, ok := s.tokenRequest(w, r)
 	if !ok {
