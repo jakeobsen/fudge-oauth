@@ -82,7 +82,7 @@ func serve() error {
 // whether or not the front page lists them. These are built only from the public URL and provider names.
 func logStart(log *slog.Logger, cfg *config.Config) {
 	log.Info("listening", "addr", cfg.Listen, "tls", cfg.TLS(), "public_url", cfg.PublicURL,
-		"providers", strings.Join(cfg.Names(), ","), "info_page", !cfg.HideInfoPage)
+		"providers", strings.Join(cfg.Names(), ","), "info_page", !cfg.HideInfoPage, "service_list", !cfg.HideServiceList)
 	for _, name := range cfg.Names() {
 		log.Info("service", "provider", name, "callback", cfg.CallbackURL(name))
 	}

@@ -46,6 +46,9 @@ type Config struct {
 	// HideInfoPage turns off the front page that lists the services and their callback URLs (info_page: false).
 	// GET / then answers as any unknown path does.
 	HideInfoPage bool
+	// HideServiceList turns off GET /api/services, which lists the services' paths and titles for Fudge
+	// (service_list: false). The address then answers as any unknown path does. It doesn't depend on HideInfoPage.
+	HideServiceList bool
 	// Providers holds the configured providers by name.
 	Providers map[string]Provider
 	// Notes say which deprecated names the configuration used, for the log at start. They name settings, never
@@ -81,13 +84,14 @@ func (c *Config) Names() []string {
 }
 
 type fileConfig struct {
-	Listen    string                   `yaml:"listen"`
-	TLS       fileTLS                  `yaml:"tls"`
-	PublicURL string                   `yaml:"public_url"`
-	Key       string                   `yaml:"key"`
-	KeyFile   string                   `yaml:"key_file"`
-	InfoPage  *bool                    `yaml:"info_page"`
-	Providers map[string]*fileProvider `yaml:"providers"`
+	Listen      string                   `yaml:"listen"`
+	TLS         fileTLS                  `yaml:"tls"`
+	PublicURL   string                   `yaml:"public_url"`
+	Key         string                   `yaml:"key"`
+	KeyFile     string                   `yaml:"key_file"`
+	InfoPage    *bool                    `yaml:"info_page"`
+	ServiceList *bool                    `yaml:"service_list"`
+	Providers   map[string]*fileProvider `yaml:"providers"`
 }
 
 type fileTLS struct {
@@ -155,6 +159,13 @@ func Load(getenv func(string) string, readFile func(string) ([]byte, error)) (*C
 		}
 		fc.InfoPage = &b
 	}
+	if v := getenv(EnvPrefix + "SERVICE_LIST"); v != "" {
+		b, err := strconv.ParseBool(v)
+		if err != nil {
+			return nil, fmt.Errorf("%sSERVICE_LIST: %q isn't true or false", EnvPrefix, v)
+		}
+		fc.ServiceList = &b
+	}
 	env("PUBLIC_URL", &fc.PublicURL)
 	env("KEY", &fc.Key)
 	env("KEY_FILE", &fc.KeyFile)
@@ -215,6 +226,9 @@ func Load(getenv func(string) string, readFile func(string) ([]byte, error)) (*C
 	}
 	if fc.InfoPage != nil {
 		cfg.HideInfoPage = !*fc.InfoPage
+	}
+	if fc.ServiceList != nil {
+		cfg.HideServiceList = !*fc.ServiceList
 	}
 	if (cfg.TLSCertFile == "") != (cfg.TLSKeyFile == "") {
 		return nil, errors.New("tls: cert_file and key_file go together; set both to serve HTTPS, or neither to serve plain HTTP behind a proxy")

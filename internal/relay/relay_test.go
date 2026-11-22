@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/rand"
 	"encoding/json"
+	"fmt"
 	"html"
 	"io"
 	"maps"
@@ -877,6 +878,146 @@ func TestInfoPageOff(t *testing.T) {
 		t.Errorf("a sign-in with the page off: %d %v", status, body)
 	}
 	hidden.checkLogs(t)
+}
+
+// serviceAnswer is what a client sees of an answer.
+type serviceAnswer struct {
+	status      int
+	contentType string
+	body        string
+}
+
+func askRelay(t *testing.T, h *harness, method, path string) serviceAnswer {
+	t.Helper()
+	req, _ := http.NewRequest(method, h.relay.URL+path, nil)
+	resp, err := noRedirects.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	return serviceAnswer{resp.StatusCode, resp.Header.Get("Content-Type"), string(body)}
+}
+
+func TestServiceList(t *testing.T) {
+	every := `{"services":[`
+	for i, p := range provider.Builtin {
+		if i > 0 {
+			every += ","
+		}
+		every += fmt.Sprintf(`{"id":%q,"title":%q}`, p.Name, p.Title)
+	}
+	every += "]}\n"
+
+	cases := []struct {
+		name  string
+		relay func() *harness
+		want  string
+	}{
+		{"none configured", func() *harness {
+			return newHarnessWith(t, func(c *config.Config) { c.Providers = map[string]config.Provider{} }, "github")
+		}, `{"services":[]}` + "\n"},
+		{"one", func() *harness { return newHarness(t, "atlassian") },
+			`{"services":[{"id":"atlassian","title":"Atlassian (Jira, Confluence)"}]}` + "\n"},
+		{"several, in the front page's order", func() *harness { return newHarness(t, "zoom", "github", "atlassian") },
+			`{"services":[{"id":"github","title":"GitHub"},{"id":"atlassian","title":"Atlassian (Jira, Confluence)"},{"id":"zoom","title":"Zoom"}]}` + "\n"},
+		{"every one", func() *harness { return newHarness(t) }, every},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			h := c.relay()
+			req, _ := http.NewRequest(http.MethodGet, h.relay.URL+"/api/services", nil)
+			resp, err := noRedirects.Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer resp.Body.Close()
+			body, _ := io.ReadAll(resp.Body)
+			if resp.StatusCode != http.StatusOK || string(body) != c.want {
+				t.Errorf("%d %q, want %q", resp.StatusCode, body, c.want)
+			}
+			if ct, cc := resp.Header.Get("Content-Type"), resp.Header.Get("Cache-Control"); ct != "application/json" || cc != "no-store" {
+				t.Errorf("Content-Type %q, Cache-Control %q", ct, cc)
+			}
+		})
+	}
+
+	h := newHarness(t, "github", "atlassian")
+	// HEAD answers as for GET without the body, as every GET route does; other methods are refused.
+	if got := askRelay(t, h, http.MethodHead, "/api/services"); got.status != http.StatusOK || got.contentType != "application/json" || got.body != "" {
+		t.Errorf("HEAD: %+v", got)
+	}
+	for _, method := range []string{http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete} {
+		if got := askRelay(t, h, method, "/api/services"); got.status != http.StatusMethodNotAllowed {
+			t.Errorf("%s: %+v", method, got)
+		}
+	}
+	// Its request log line has the path, status and duration, and nothing else.
+	var logged bool
+	for _, line := range strings.Split(strings.TrimSpace(h.logs.String()), "\n") {
+		var entry map[string]any
+		if err := json.Unmarshal([]byte(line), &entry); err != nil {
+			t.Fatalf("%q: %v", line, err)
+		}
+		if entry["msg"] != "request" || entry["path"] != "/api/services" || entry["status"] != float64(http.StatusOK) {
+			continue
+		}
+		logged = true
+		if keys := slices.Sorted(maps.Keys(entry)); !slices.Equal(keys, []string{"duration_ms", "level", "msg", "path", "status", "time"}) {
+			t.Errorf("a request log carries %v: %s", keys, line)
+		}
+	}
+	if !logged {
+		t.Errorf("no request line for the list:\n%s", h.logs.String())
+	}
+	h.checkLogs(t)
+}
+
+func TestServiceListSwitch(t *testing.T) {
+	listOff := newHarnessWith(t, func(c *config.Config) { c.HideServiceList = true }, "github")
+	pageOff := newHarnessWith(t, func(c *config.Config) { c.HideInfoPage = true }, "github")
+	bothOn := newHarness(t, "github")
+	const list = `{"services":[{"id":"github","title":"GitHub"}]}` + "\n"
+
+	// Off, the address answers exactly as a path that was never there, whatever the method.
+	for _, method := range []string{http.MethodGet, http.MethodHead, http.MethodPost} {
+		got, unknown := askRelay(t, listOff, method, "/api/services"), askRelay(t, listOff, method, "/no-such-page")
+		if got != unknown || got.status != http.StatusNotFound {
+			t.Errorf("%s /api/services: %+v; an unknown path: %+v", method, got, unknown)
+		}
+	}
+	// The front page's switch and the list's are independent.
+	if got := askRelay(t, listOff, http.MethodGet, "/"); got.status != http.StatusOK || !strings.Contains(got.body, "/github/callback") {
+		t.Errorf("with the list off, / answers %+v", got)
+	}
+	if got := askRelay(t, pageOff, http.MethodGet, "/api/services"); got.status != http.StatusOK || got.body != list {
+		t.Errorf("with the front page off, the list answers %+v", got)
+	}
+	if got := askRelay(t, pageOff, http.MethodGet, "/"); got.status != http.StatusNotFound {
+		t.Errorf("with the front page off, / answers %+v", got)
+	}
+
+	// Nothing else changes. (The front page, checked above, holds each relay's own address.)
+	for _, c := range []struct{ method, path string }{
+		{http.MethodGet, "/healthz"},
+		{http.MethodGet, "/github/authorize"},
+		{http.MethodGet, "/github/callback?state=not-sealed&code=x"},
+		{http.MethodGet, "/github/token"},
+		{http.MethodPost, "/github/token"},
+		{http.MethodPost, "/github/refresh-token"},
+		{http.MethodGet, "/zoom/authorize"},
+		{http.MethodGet, "/api/services/"},
+		{http.MethodGet, "/api"},
+	} {
+		if off, on := askRelay(t, listOff, c.method, c.path), askRelay(t, bothOn, c.method, c.path); off != on {
+			t.Errorf("%s %s: %+v with the list off, %+v with it on", c.method, c.path, off, on)
+		}
+	}
+	si, code := listOff.signIn(t, "github")
+	if status, body := listOff.post(t, "/github/token", "json", exchangeFields(code, si.verifier)); status != http.StatusOK || body["access_token"] == nil {
+		t.Errorf("a sign-in with the list off: %d %v", status, body)
+	}
+	listOff.checkLogs(t)
 }
 
 func TestLogLines(t *testing.T) {
