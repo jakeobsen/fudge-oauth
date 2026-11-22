@@ -8,7 +8,7 @@ It keeps nothing: no database and no sessions. What a sign-in needs between step
 
 ## Services
 
-The seven that `@raycast/utils`' `OAuthService` has built in, and ten that store extensions reach through Raycast's other sign-in servers:
+The seven that `@raycast/utils`' `OAuthService` has built in, and fourteen that store extensions reach through Raycast's other sign-in servers:
 
 | Service | Path | Where to register the OAuth app |
 |---|---|---|
@@ -29,10 +29,16 @@ The seven that `@raycast/utils`' `OAuthService` has built in, and ten that store
 | Plane | `plane` | Plane → Workspace settings → Integrations → Build your own → Redirect URI; Scopes & Permissions → the scopes your extensions ask for |
 | Homey | `homey` | Homey Developer Tools (tools.developer.homey.app/api/clients) → your Web API client → Redirect URI |
 | Figma | `figma` | figma.com/developers/apps → your app → OAuth credentials → Redirect URLs; OAuth scopes → the scopes your extensions ask for |
+| 42 | `intra42` | profile.intra.42.fr/oauth/applications → your application → Redirect URI; Scopes → the scopes your extensions ask for |
+| TickTick | `ticktick` | TickTick Developer Center (developer.ticktick.com/manage) → your app → Redirect URL |
+| Zoho | `zoho` | Zoho API Console (api-console.zoho.com) → Server-based Applications → Authorized Redirect URIs |
+| Webflow | `webflow` | Webflow → Workspace settings → Apps & Integrations → App Development → your App → Data Client → Redirect URI and scopes |
 
 Configure only the ones you want to offer.
 
 **Atlassian** covers Jira and Confluence with one app. fudge-oauth adds `audience=api.atlassian.com` and `prompt=consent` to its sign-ins when an extension doesn't send them, as Raycast's Jira server does. Until v0.3.0 its path was `jira`: `providers.jira`, `FUDGE_OAUTH_JIRA_*` and `/jira/…` still work for this release, with a note in the log at start, and a sign-in begun before the upgrade still completes. Register `<public_url>/atlassian/callback` as the app's callback URL; it's the one fudge-oauth sends, whichever path a sign-in starts at. Where both names are set, `atlassian` wins.
+
+**Zoho** signs in at Zoho's US data center (`accounts.zoho.com`). fudge-oauth adds `prompt=consent` to its sign-ins when an extension doesn't send it, since Zoho otherwise gives a refresh token only at a user's first consent.
 
 ## Confirmed integrations
 
@@ -44,6 +50,16 @@ These services have been tested with a real sign-in:
 The other services are added from each service's docs and presumed to work, and they're tested against the relay's fakes.
 Only the services listed here are confirmed.
 A service joins this list once someone has signed in with it for real.
+
+## Services left out on purpose
+
+A service is added only when a provider in fudge-oauth and its address in Fudge's sign-in table are all it takes.
+These services, which store extensions reach through Raycast's sign-in servers, don't meet that, so fudge-oauth leaves them out for now:
+
+- Apple Music doesn't sign in with OAuth: it would need a MusicKit sign-in page and developer tokens that the server signs.
+- Monzo's API doesn't allow public apps: an app connects only its owner and a small set of people they allow.
+- Twitch's store extension sends Raycast's own app ID with every call, so a token from another app can't be used without changing the extension's requests.
+- PlanetScale's store extension reads a deprecated endpoint tied to one organization's app.
 
 ## Setting it up
 
@@ -136,7 +152,7 @@ fudge-oauth answers at the same paths as Raycast's sign-in servers, and Fudge se
 1. `GET /<path>/authorize`: Fudge opens this in the browser, with a PKCE challenge and a redirect back to Fudge on `127.0.0.1` or `[::1]` (nothing else is accepted). fudge-oauth seals those into the `state` and sends the browser to the service with its own client ID. Where the service supports PKCE, fudge-oauth uses its own verifier with it, which rides inside the sealed state and code.
 2. `GET /<path>/callback`: the service comes back here. fudge-oauth seals the service's code, and sends the browser back to Fudge with it.
 3. `POST /<path>/token`: Fudge exchanges that code, proving with the PKCE verifier that it started the sign-in. fudge-oauth exchanges the service's code with its secret and returns the tokens.
-4. `POST /<path>/refresh-token`: refreshes a token the same way. `/token` takes a refresh too, since that's where Google, Atlassian, Zoom and Notion refresh. GitHub's OAuth apps issue no refresh tokens, so GitHub answers 400.
+4. `POST /<path>/refresh-token`: refreshes a token the same way. `/token` takes a refresh too, since that's where Google, Atlassian, Zoom and Notion refresh. GitHub's OAuth apps and Webflow issue no refresh tokens, so those answer 400.
 
 Sealed values are bound to their kind and service: a state never works as a code, nor at another service's paths. A sealed state lasts 10 minutes, a sealed code 5. `GET /healthz` answers 200.
 

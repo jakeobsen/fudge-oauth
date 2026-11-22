@@ -1,9 +1,9 @@
 // Package provider holds the built-in OAuth providers: the seven that
 // @raycast/utils' OAuthService knows (GitHub, Linear, Slack, Asana, Google,
-// Atlassian for Jira and Confluence, and Zoom), ten that store extensions reach
-// through Raycast's other sign-in servers (Notion, Todoist, Basecamp, Gumroad,
-// Moneybird, FreeAgent, Mollie, Plane, Homey and Figma), and how the relay talks to
-// each.
+// Atlassian for Jira and Confluence, and Zoom), fourteen that store extensions
+// reach through Raycast's other sign-in servers (Notion, Todoist, Basecamp,
+// Gumroad, Moneybird, FreeAgent, Mollie, Plane, Homey, Figma, 42, TickTick, Zoho
+// and Webflow), and how the relay talks to each.
 package provider
 
 import "slices"
@@ -46,8 +46,8 @@ type Provider struct {
 	ClientAuth ClientAuth
 	// TokenBody is how token requests are encoded.
 	TokenBody BodyEncoding
-	// AuthorizeDefaults are authorize parameters the relay adds when the extension didn't send them, as
-	// Raycast's proxy does for the provider.
+	// AuthorizeDefaults are authorize parameters the relay adds when the extension didn't send them: what
+	// Raycast's proxy adds for the provider (Atlassian's), or what the relay's own app needs (Zoho's).
 	AuthorizeDefaults map[string]string
 	// Setup says where the provider's OAuth apps are registered, for the front page.
 	Setup string
