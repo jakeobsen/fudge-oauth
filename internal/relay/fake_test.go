@@ -553,6 +553,12 @@ func codeShape(name, access, refresh string) map[string]any {
 			"user_id": "3458764517517819000", "refresh_token": refresh, "access_token": access, "expires_in": 3599,
 			"team_id": "3458764517517819001", "scope": "boards:write boards:read", "token_type": "bearer",
 		}
+	case "tesla":
+		// Tesla's page shows no answer, so these fields are inferred, with an id_token for the openid scope.
+		return map[string]any{
+			"access_token": access, "refresh_token": refresh, "id_token": "eyJ.fake", "expires_in": 28800,
+			"token_type": "Bearer",
+		}
 	}
 	panic(name)
 }

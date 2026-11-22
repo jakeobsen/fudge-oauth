@@ -87,6 +87,8 @@ var extensions = map[string]extension{
 	// token bodies itself, with the fields OAuthService sends as JSON, so exchangeFields and refreshFields are its
 	// bodies too.
 	"miro": {scope: ""},
+	// The store's tesla-energy extension (tesla-energy/src/tesla.ts), with North America's Fleet API as its audience.
+	"tesla": {scope: "openid offline_access energy_device_data", extras: map[string]string{"audience": "https://fleet-api.prd.na.vn.cloud.tesla.com"}},
 }
 
 var encodings = []string{"json", "url-encoded"}
@@ -360,7 +362,7 @@ func TestZohoGetsPromptConsentOnce(t *testing.T) {
 // The relay gives exchange a map of its own for every request, never a provider's: exchange writes the client
 // credentials into the map it's given, and Builtin's maps are shared by every request.
 func TestTokenParametersStayTheProviders(t *testing.T) {
-	names := []string{"whoop"}
+	names := []string{"tesla", "whoop"}
 	h := newHarness(t, names...)
 	before := map[string][2]map[string]string{}
 	for _, name := range names {

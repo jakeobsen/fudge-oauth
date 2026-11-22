@@ -13,10 +13,10 @@ func TestBuiltin(t *testing.T) {
 		"notion", "todoist", "basecamp", "gumroad", "moneybird",
 		"freeagent", "mollie", "plane", "homey", "figma",
 		"intra42", "ticktick", "zoho", "webflow",
-		"bangumi", "wave", "whoop", "miro",
+		"bangumi", "wave", "whoop", "miro", "tesla",
 	}
 	if got := Names(); !slices.Equal(got, want) {
-		t.Fatalf("Names() = %v, want OAuthService's seven, then the eighteen behind Raycast's other sign-in servers: %v", got, want)
+		t.Fatalf("Names() = %v, want OAuthService's seven, then the nineteen behind Raycast's other sign-in servers: %v", got, want)
 	}
 	for _, p := range Builtin {
 		for _, raw := range []string{p.AuthorizeURL, p.TokenURL} {
@@ -60,7 +60,7 @@ func TestDirectProvidersMatchOAuthService(t *testing.T) {
 	}
 }
 
-// The eighteen services store extensions reach through Raycast's other sign-in
+// The nineteen services store extensions reach through Raycast's other sign-in
 // servers (FUD-166), as each service documents them.
 func TestServicesBehindRaycastsOtherSignInServers(t *testing.T) {
 	for _, want := range []Provider{
@@ -220,6 +220,18 @@ func TestServicesBehindRaycastsOtherSignInServers(t *testing.T) {
 			TokenURL: "https://api.miro.com/v1/oauth/token", PKCE: false, Refresh: true,
 			ClientAuth: ClientAuthBody, TokenBody: BodyForm,
 		},
+		// https://developer.tesla.com/docs/fleet-api/authentication/third-party-tokens:
+		// token calls at fleet-auth.prd.vn.cloud.tesla.com, credentials in a form body,
+		// refresh tokens with openid and offline_access, and a Fleet API base URL as the
+		// code exchange's audience: North America's, the one the store's extension calls.
+		// PKCE, since Tesla's discovery document supports S256
+		// (https://fleet-auth.prd.vn.cloud.tesla.com/oauth2/v3/thirdparty/.well-known/openid-configuration).
+		{
+			Name: "tesla", AuthorizeURL: "https://auth.tesla.com/oauth2/v3/authorize",
+			TokenURL: "https://fleet-auth.prd.vn.cloud.tesla.com/oauth2/v3/token", PKCE: true, Refresh: true,
+			ClientAuth: ClientAuthBody, TokenBody: BodyForm,
+			CodeParams: map[string]string{"audience": "https://fleet-api.prd.na.vn.cloud.tesla.com"},
+		},
 	} {
 		got, ok := Lookup(want.Name)
 		if !ok {
@@ -243,7 +255,7 @@ func TestServicesBehindRaycastsOtherSignInServers(t *testing.T) {
 func TestOnlyTheirProvidersAddTokenParameters(t *testing.T) {
 	refreshRedirectURI := []string{"bangumi", "wave"}
 	refreshParams := map[string]map[string]string{"whoop": {"scope": "offline"}}
-	codeParams := map[string]map[string]string{}
+	codeParams := map[string]map[string]string{"tesla": {"audience": "https://fleet-api.prd.na.vn.cloud.tesla.com"}}
 	relaysOwn := []string{"grant_type", "code", "code_verifier", "redirect_uri", "refresh_token", "client_id", "client_secret"}
 	for _, p := range Builtin {
 		if p.RefreshRedirectURI != slices.Contains(refreshRedirectURI, p.Name) {

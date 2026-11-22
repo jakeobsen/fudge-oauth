@@ -1,9 +1,10 @@
 // Package provider holds the built-in OAuth providers: the seven that
 // @raycast/utils' OAuthService knows (GitHub, Linear, Slack, Asana, Google,
-// Atlassian for Jira and Confluence, and Zoom), eighteen that store extensions
+// Atlassian for Jira and Confluence, and Zoom), nineteen that store extensions
 // reach through Raycast's other sign-in servers (Notion, Todoist, Basecamp,
 // Gumroad, Moneybird, FreeAgent, Mollie, Plane, Homey, Figma, 42, TickTick, Zoho,
-// Webflow, Bangumi, Wave, WHOOP and Miro), and how the relay talks to each.
+// Webflow, Bangumi, Wave, WHOOP, Miro and Tesla), and how the relay talks to
+// each.
 package provider
 
 import "slices"
@@ -316,6 +317,19 @@ var Builtin = []Provider{
 		// Only an app created with expiring tokens gets refresh tokens; the others' tokens don't expire.
 		Refresh: true,
 		Setup:   "Miro → Settings → Your apps → Create new app (Expire user authorization token on) → Redirect URI; Permissions → boards:read and boards:write",
+	},
+	{
+		Name:         "tesla",
+		Title:        "Tesla",
+		AuthorizeURL: "https://auth.tesla.com/oauth2/v3/authorize",
+		// Tesla's token calls must use this host.
+		TokenURL: "https://fleet-auth.prd.vn.cloud.tesla.com/oauth2/v3/token",
+		PKCE:     true,
+		Refresh:  true,
+		// Tesla requires a Fleet API base URL as the token's audience: North America's, the one the store's Tesla
+		// extension calls.
+		CodeParams: map[string]string{"audience": "https://fleet-api.prd.na.vn.cloud.tesla.com"},
+		Setup:      "developer.tesla.com → your application → Allowed Redirect URI(s); also a hosted public key, partner registration and a payment method (Tesla's Fleet API docs)",
 	},
 }
 
