@@ -7,9 +7,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -339,6 +341,11 @@ func (fp *fakeProvider) token(w http.ResponseWriter, r *http.Request) {
 
 	switch form["grant_type"] {
 	case "authorization_code":
+		names := []string{"grant_type", "code", "redirect_uri"}
+		if fp.def.PKCE {
+			names = append(names, "code_verifier")
+		}
+		fp.checkParams("token", form, names, fp.def.CodeParams)
 		if !fp.codes[form["code"]] {
 			providerRefusal(w, name, "invalid_grant", "The code passed is incorrect or expired.")
 			return
@@ -368,6 +375,14 @@ func (fp *fakeProvider) token(w http.ResponseWriter, r *http.Request) {
 		if !fp.def.Refresh {
 			t.Errorf("%s token: the relay asked to refresh a provider without refresh tokens", name)
 		}
+		names := []string{"grant_type", "refresh_token"}
+		if fp.def.RefreshRedirectURI {
+			names = append(names, "redirect_uri")
+			if form["redirect_uri"] != fp.callback() {
+				t.Errorf("%s refresh: redirect_uri %q, want %q", name, form["redirect_uri"], fp.callback())
+			}
+		}
+		fp.checkParams("refresh", form, names, fp.def.RefreshParams)
 		if !fp.refreshTokens[form["refresh_token"]] {
 			providerRefusal(w, name, "invalid_grant", "Bad refresh token.")
 			return
@@ -378,6 +393,27 @@ func (fp *fakeProvider) token(w http.ResponseWriter, r *http.Request) {
 	default:
 		t.Errorf("%s token: grant_type %q", name, form["grant_type"])
 		providerRefusal(w, name, "unsupported_grant_type", "")
+	}
+}
+
+// checkParams wants a token request to carry exactly the parameters named in want, the client credentials with
+// body credentials, and each of the provider's own parameters for that grant with its value: anything extra or
+// missing is an error, whichever provider it is.
+func (fp *fakeProvider) checkParams(grant string, form map[string]string, want []string, own map[string]string) {
+	t := fp.h.t
+	want = slices.Clone(want)
+	for k, v := range own {
+		want = append(want, k)
+		if form[k] != v {
+			t.Errorf("%s %s: %s %q, want %q", fp.def.Name, grant, k, form[k], v)
+		}
+	}
+	if fp.def.ClientAuth == provider.ClientAuthBody {
+		want = append(want, "client_id", "client_secret")
+	}
+	slices.Sort(want)
+	if got := slices.Sorted(maps.Keys(form)); !slices.Equal(got, want) {
+		t.Errorf("%s %s: parameters %v, want exactly %v", fp.def.Name, grant, got, want)
 	}
 }
 
@@ -491,6 +527,38 @@ func codeShape(name, access, refresh string) map[string]any {
 		// Webflow documents no answer beyond the access_token its SDK reads, so token_type is inferred. No
 		// expires_in and no refresh_token: no page documents either.
 		return map[string]any{"access_token": access, "token_type": "bearer"}
+	case "bangumi":
+		// Bangumi's How-to-Auth.md example, one-week tokens and a numeric user_id. Its newer server answers with
+		// expires_in 1209600, a string user_id and no scope; either shape passes through unchanged.
+		return map[string]any{
+			"access_token": access, "expires_in": 604800, "token_type": "Bearer", "scope": nil,
+			"refresh_token": refresh, "user_id": 1,
+		}
+	case "wave":
+		// The fields of Wave's OAuth guide, which gives no expires_in value, so 7200 is made up.
+		return map[string]any{
+			"access_token": access, "expires_in": 7200, "token_type": "Bearer",
+			"scope": "business:read customer:* invoice:read product:* user:read", "refresh_token": refresh,
+			"userId": "VXNlcjox",
+		}
+	case "whoop":
+		// WHOOP's OAuth page's refresh answer, which carries the next refresh token.
+		return map[string]any{
+			"access_token": access, "expires_in": 3600, "refresh_token": refresh, "scope": "offline read:recovery",
+			"token_type": "bearer",
+		}
+	case "miro":
+		// Miro's getting-started example: one-hour tokens, and user_id and team_id as strings.
+		return map[string]any{
+			"user_id": "3458764517517819000", "refresh_token": refresh, "access_token": access, "expires_in": 3599,
+			"team_id": "3458764517517819001", "scope": "boards:write boards:read", "token_type": "bearer",
+		}
+	case "tesla":
+		// Tesla's page shows no answer, so these fields are inferred, with an id_token for the openid scope.
+		return map[string]any{
+			"access_token": access, "refresh_token": refresh, "id_token": "eyJ.fake", "expires_in": 28800,
+			"token_type": "Bearer",
+		}
 	}
 	panic(name)
 }
@@ -502,6 +570,9 @@ func refreshShape(name, access, refresh string) map[string]any {
 	case "figma":
 		// Figma's refresh answer has no refresh token: the one the client has can be used again.
 		return map[string]any{"access_token": access, "token_type": "bearer", "expires_in": 7776000}
+	case "bangumi":
+		// Bangumi's refresh example: a new refresh token, and no user_id.
+		return map[string]any{"access_token": access, "expires_in": 604800, "token_type": "Bearer", "scope": nil, "refresh_token": refresh}
 	case "zoho":
 		// Zoho's refresh page's example: no refresh token, since Zoho's are used again.
 		return map[string]any{"access_token": access, "api_domain": "https://www.zohoapis.com", "token_type": "Bearer", "expires_in": 3600}

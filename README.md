@@ -8,7 +8,7 @@ It keeps nothing: no database and no sessions. What a sign-in needs between step
 
 ## Services
 
-The seven that `@raycast/utils`' `OAuthService` has built in, and fourteen that store extensions reach through Raycast's other sign-in servers:
+The seven that `@raycast/utils`' `OAuthService` has built in, and nineteen that store extensions reach through Raycast's other sign-in servers:
 
 | Service | Path | Where to register the OAuth app |
 |---|---|---|
@@ -33,12 +33,19 @@ The seven that `@raycast/utils`' `OAuthService` has built in, and fourteen that 
 | TickTick | `ticktick` | TickTick Developer Center (developer.ticktick.com/manage) → your app → Redirect URL |
 | Zoho | `zoho` | Zoho API Console (api-console.zoho.com) → Server-based Applications → Authorized Redirect URIs |
 | Webflow | `webflow` | Webflow → Workspace settings → Apps & Integrations → App Development → your App → Data Client → Redirect URI and scopes |
+| Bangumi | `bangumi` | bgm.tv/dev/app → your app → callback URL |
+| Wave | `wave` | Wave Developer Portal → Manage Applications → your application → Redirect URIs |
+| WHOOP | `whoop` | WHOOP Developer Dashboard (developer-dashboard.whoop.com) → your app → Redirect URLs; Scopes → the scopes your extensions ask for |
+| Miro | `miro` | Miro → Settings → Your apps → Create new app (Expire user authorization token on) → Redirect URI; Permissions → boards:read and boards:write |
+| Tesla | `tesla` | developer.tesla.com → your application → Allowed Redirect URI(s); also a hosted public key, partner registration and a payment method (Tesla's Fleet API docs) |
 
 Configure only the ones you want to offer.
 
 **Atlassian** covers Jira and Confluence with one app. fudge-oauth adds `audience=api.atlassian.com` and `prompt=consent` to its sign-ins when an extension doesn't send them, as Raycast's Jira server does. Until v0.3.0 its path was `jira`: `providers.jira`, `FUDGE_OAUTH_JIRA_*` and `/jira/…` still work for this release, with a note in the log at start, and a sign-in begun before the upgrade still completes. Register `<public_url>/atlassian/callback` as the app's callback URL; it's the one fudge-oauth sends, whichever path a sign-in starts at. Where both names are set, `atlassian` wins.
 
 **Zoho** signs in at Zoho's US data center (`accounts.zoho.com`). fudge-oauth adds `prompt=consent` to its sign-ins when an extension doesn't send it, since Zoho otherwise gives a refresh token only at a user's first consent.
+
+**Tesla** gets North America's Fleet API as the token's audience, the one the store's Tesla extension uses. Tesla also asks for your app's public key on your domain, a partner registration and a payment method, as its Fleet API docs describe.
 
 ## Confirmed integrations
 

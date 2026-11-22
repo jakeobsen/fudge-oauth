@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"html"
 	"io"
+	"maps"
 	"net/http"
 	"net/url"
 	"reflect"
@@ -76,6 +77,18 @@ var extensions = map[string]extension{
 	"zoho": {scope: "ZohoMail.accounts.READ ZohoMail.folders.READ ZohoMail.messages.READ ZohoMail.messages.UPDATE ZohoMail.organization.accounts.READ ZohoMail.organization.domains.READ ZohoMail.partner.organization.READ", extras: map[string]string{"access_type": "offline"}},
 	// The store's webflow-sites extension (webflow-sites/src/oauth.ts).
 	"webflow": {scope: "sites:read assets:read"},
+	// The store's bangumi extension (bangumi/src/api/oauth.ts) sends no scope: Bangumi hasn't implemented scopes.
+	"bangumi": {scope: ""},
+	// The store's wave extension (wave/src/lib/oauth.ts).
+	"wave": {scope: "business:read customer:* invoice:read product:* user:read"},
+	// The store's whoop extension (whoop/src/api/oauth.ts), with offline for refresh tokens.
+	"whoop": {scope: "read:recovery read:cycles read:workout read:sleep read:profile read:body_measurement offline"},
+	// The store's miro extension (miro/src/oauth/miro.tsx) sends no scope, so the app's own apply. It builds its
+	// token bodies itself, with the fields OAuthService sends as JSON, so exchangeFields and refreshFields are its
+	// bodies too.
+	"miro": {scope: ""},
+	// The store's tesla-energy extension (tesla-energy/src/tesla.ts), with North America's Fleet API as its audience.
+	"tesla": {scope: "openid offline_access energy_device_data", extras: map[string]string{"audience": "https://fleet-api.prd.na.vn.cloud.tesla.com"}},
 }
 
 var encodings = []string{"json", "url-encoded"}
@@ -342,6 +355,41 @@ func TestZohoGetsPromptConsentOnce(t *testing.T) {
 	q = authorize("github", nil)
 	if q.Has("prompt") {
 		t.Errorf("github got Zoho's prompt: %v", q)
+	}
+	h.checkLogs(t)
+}
+
+// The relay gives exchange a map of its own for every request, never a provider's: exchange writes the client
+// credentials into the map it's given, and Builtin's maps are shared by every request.
+func TestTokenParametersStayTheProviders(t *testing.T) {
+	names := []string{"tesla", "whoop"}
+	h := newHarness(t, names...)
+	before := map[string][2]map[string]string{}
+	for _, name := range names {
+		p, _ := provider.Lookup(name)
+		if len(p.CodeParams)+len(p.RefreshParams) == 0 {
+			t.Fatalf("%s adds no token parameters", name)
+		}
+		before[name] = [2]map[string]string{maps.Clone(p.CodeParams), maps.Clone(p.RefreshParams)}
+	}
+	for _, name := range names {
+		si, code := h.signIn(t, name)
+		status, body := h.post(t, "/"+name+"/token", "json", exchangeFields(code, si.verifier))
+		if status != http.StatusOK {
+			t.Fatalf("%s token: %d %v", name, status, body)
+		}
+		refresh, _ := body["refresh_token"].(string)
+		for _, path := range []string{"/refresh-token", "/token"} {
+			if status, body := h.post(t, "/"+name+path, "url-encoded", refreshFields(refresh)); status != http.StatusOK {
+				t.Fatalf("%s refresh at %s: %d %v", name, path, status, body)
+			}
+		}
+	}
+	for _, name := range names {
+		p, _ := provider.Lookup(name)
+		if !maps.Equal(p.CodeParams, before[name][0]) || !maps.Equal(p.RefreshParams, before[name][1]) {
+			t.Errorf("%s: Builtin's maps changed: CodeParams %v, RefreshParams %v", name, p.CodeParams, p.RefreshParams)
+		}
 	}
 	h.checkLogs(t)
 }

@@ -13,9 +13,10 @@ func TestBuiltin(t *testing.T) {
 		"notion", "todoist", "basecamp", "gumroad", "moneybird",
 		"freeagent", "mollie", "plane", "homey", "figma",
 		"intra42", "ticktick", "zoho", "webflow",
+		"bangumi", "wave", "whoop", "miro", "tesla",
 	}
 	if got := Names(); !slices.Equal(got, want) {
-		t.Fatalf("Names() = %v, want OAuthService's seven, then the fourteen behind Raycast's other sign-in servers: %v", got, want)
+		t.Fatalf("Names() = %v, want OAuthService's seven, then the nineteen behind Raycast's other sign-in servers: %v", got, want)
 	}
 	for _, p := range Builtin {
 		for _, raw := range []string{p.AuthorizeURL, p.TokenURL} {
@@ -59,7 +60,7 @@ func TestDirectProvidersMatchOAuthService(t *testing.T) {
 	}
 }
 
-// The fourteen services store extensions reach through Raycast's other sign-in
+// The nineteen services store extensions reach through Raycast's other sign-in
 // servers (FUD-166), as each service documents them.
 func TestServicesBehindRaycastsOtherSignInServers(t *testing.T) {
 	for _, want := range []Provider{
@@ -181,6 +182,56 @@ func TestServicesBehindRaycastsOtherSignInServers(t *testing.T) {
 			TokenURL: "https://api.webflow.com/oauth/access_token", PKCE: false, Refresh: false,
 			ClientAuth: ClientAuthBody, TokenBody: BodyJSON,
 		},
+		// Bangumi's docs (github.com/bangumi/api, docs-raw/How-to-Auth.md): credentials as
+		// parameters for both grants, a refresh that needs the app's callback as
+		// redirect_uri, refresh tokens, no PKCE. The form body is inferred from Bangumi's
+		// newer server (bangumi/server-private, routes/oauth/index.ts), which takes form
+		// bodies and refuses a refresh without the registered callback.
+		{
+			Name: "bangumi", AuthorizeURL: "https://bgm.tv/oauth/authorize",
+			TokenURL: "https://bgm.tv/oauth/access_token", PKCE: false, Refresh: true,
+			ClientAuth: ClientAuthBody, TokenBody: BodyForm, RefreshRedirectURI: true,
+		},
+		// Wave's OAuth guide (https://web.archive.org/web/20260225043828/https://developer.waveapps.com/hc/en-us/articles/360019493652-OAuth-Guide,
+		// archived, since Wave's page refuses plain fetches): credentials as parameters in a
+		// form body for both grants, a refresh that must carry the sign-in's redirect URI,
+		// refresh tokens, no PKCE.
+		{
+			Name: "wave", AuthorizeURL: "https://api.waveapps.com/oauth2/authorize/",
+			TokenURL: "https://api.waveapps.com/oauth2/token/", PKCE: false, Refresh: true,
+			ClientAuth: ClientAuthBody, TokenBody: BodyForm, RefreshRedirectURI: true,
+		},
+		// https://developer.whoop.com/docs/developing/oauth/ and the refresh tutorial
+		// (https://developer.whoop.com/docs/tutorials/refresh-token-javascript/):
+		// credentials in a form body, refresh tokens with the offline scope, which a refresh
+		// asks for again so that the answer carries the next refresh token, no PKCE.
+		{
+			Name: "whoop", AuthorizeURL: "https://api.prod.whoop.com/oauth/oauth2/auth",
+			TokenURL: "https://api.prod.whoop.com/oauth/oauth2/token", PKCE: false, Refresh: true,
+			ClientAuth: ClientAuthBody, TokenBody: BodyForm,
+			RefreshParams: map[string]string{"scope": "offline"},
+		},
+		// https://developers.miro.com/reference/authorization-and-authentication:
+		// credentials as parameters, refresh tokens for apps made with expiring tokens, no
+		// PKCE. Miro documents the parameters in the query string; whether it takes the
+		// relay's form body is checked with a real sign-in.
+		{
+			Name: "miro", AuthorizeURL: "https://miro.com/oauth/authorize",
+			TokenURL: "https://api.miro.com/v1/oauth/token", PKCE: false, Refresh: true,
+			ClientAuth: ClientAuthBody, TokenBody: BodyForm,
+		},
+		// https://developer.tesla.com/docs/fleet-api/authentication/third-party-tokens:
+		// token calls at fleet-auth.prd.vn.cloud.tesla.com, credentials in a form body,
+		// refresh tokens with openid and offline_access, and a Fleet API base URL as the
+		// code exchange's audience: North America's, the one the store's extension calls.
+		// PKCE, since Tesla's discovery document supports S256
+		// (https://fleet-auth.prd.vn.cloud.tesla.com/oauth2/v3/thirdparty/.well-known/openid-configuration).
+		{
+			Name: "tesla", AuthorizeURL: "https://auth.tesla.com/oauth2/v3/authorize",
+			TokenURL: "https://fleet-auth.prd.vn.cloud.tesla.com/oauth2/v3/token", PKCE: true, Refresh: true,
+			ClientAuth: ClientAuthBody, TokenBody: BodyForm,
+			CodeParams: map[string]string{"audience": "https://fleet-api.prd.na.vn.cloud.tesla.com"},
+		},
 	} {
 		got, ok := Lookup(want.Name)
 		if !ok {
@@ -188,11 +239,40 @@ func TestServicesBehindRaycastsOtherSignInServers(t *testing.T) {
 			continue
 		}
 		if got.AuthorizeURL != want.AuthorizeURL || got.TokenURL != want.TokenURL || got.PKCE != want.PKCE ||
-			got.Refresh != want.Refresh || got.ClientAuth != want.ClientAuth || got.TokenBody != want.TokenBody {
+			got.Refresh != want.Refresh || got.ClientAuth != want.ClientAuth || got.TokenBody != want.TokenBody ||
+			got.RefreshRedirectURI != want.RefreshRedirectURI || !maps.Equal(got.CodeParams, want.CodeParams) ||
+			!maps.Equal(got.RefreshParams, want.RefreshParams) {
 			t.Errorf("%s: %+v, want %+v", want.Name, got, want)
 		}
 		if !maps.Equal(got.AuthorizeDefaults, want.AuthorizeDefaults) {
 			t.Errorf("%s: AuthorizeDefaults %v, want %v", want.Name, got.AuthorizeDefaults, want.AuthorizeDefaults)
+		}
+	}
+}
+
+// Each token parameter field is set only for the services whose docs ask for it, and never names a parameter the
+// relay sets itself.
+func TestOnlyTheirProvidersAddTokenParameters(t *testing.T) {
+	refreshRedirectURI := []string{"bangumi", "wave"}
+	refreshParams := map[string]map[string]string{"whoop": {"scope": "offline"}}
+	codeParams := map[string]map[string]string{"tesla": {"audience": "https://fleet-api.prd.na.vn.cloud.tesla.com"}}
+	relaysOwn := []string{"grant_type", "code", "code_verifier", "redirect_uri", "refresh_token", "client_id", "client_secret"}
+	for _, p := range Builtin {
+		if p.RefreshRedirectURI != slices.Contains(refreshRedirectURI, p.Name) {
+			t.Errorf("%s: RefreshRedirectURI = %v", p.Name, p.RefreshRedirectURI)
+		}
+		if !maps.Equal(p.RefreshParams, refreshParams[p.Name]) {
+			t.Errorf("%s: RefreshParams %v, want %v", p.Name, p.RefreshParams, refreshParams[p.Name])
+		}
+		if !maps.Equal(p.CodeParams, codeParams[p.Name]) {
+			t.Errorf("%s: CodeParams %v, want %v", p.Name, p.CodeParams, codeParams[p.Name])
+		}
+		for _, params := range []map[string]string{p.CodeParams, p.RefreshParams} {
+			for name := range params {
+				if slices.Contains(relaysOwn, name) {
+					t.Errorf("%s: adds %s, which the relay sets itself", p.Name, name)
+				}
+			}
 		}
 	}
 }

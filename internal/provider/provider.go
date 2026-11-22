@@ -1,9 +1,10 @@
 // Package provider holds the built-in OAuth providers: the seven that
 // @raycast/utils' OAuthService knows (GitHub, Linear, Slack, Asana, Google,
-// Atlassian for Jira and Confluence, and Zoom), fourteen that store extensions
+// Atlassian for Jira and Confluence, and Zoom), nineteen that store extensions
 // reach through Raycast's other sign-in servers (Notion, Todoist, Basecamp,
-// Gumroad, Moneybird, FreeAgent, Mollie, Plane, Homey, Figma, 42, TickTick, Zoho
-// and Webflow), and how the relay talks to each.
+// Gumroad, Moneybird, FreeAgent, Mollie, Plane, Homey, Figma, 42, TickTick, Zoho,
+// Webflow, Bangumi, Wave, WHOOP, Miro and Tesla), and how the relay talks to
+// each.
 package provider
 
 import "slices"
@@ -49,6 +50,14 @@ type Provider struct {
 	// AuthorizeDefaults are authorize parameters the relay adds when the extension didn't send them: what
 	// Raycast's proxy adds for the provider (Atlassian's), or what the relay's own app needs (Zoho's).
 	AuthorizeDefaults map[string]string
+	// CodeParams are parameters the relay adds to every code exchange (Tesla's audience). The relay's own always win.
+	CodeParams map[string]string
+	// RefreshParams are parameters the relay adds to every refresh grant (WHOOP's scope=offline). The relay's own
+	// always win.
+	RefreshParams map[string]string
+	// RefreshRedirectURI says whether a refresh grant carries the relay's callback as redirect_uri, as Bangumi and
+	// Wave require.
+	RefreshRedirectURI bool
 	// Setup says where the provider's OAuth apps are registered, for the front page.
 	Setup string
 }
@@ -265,6 +274,62 @@ var Builtin = []Provider{
 		Refresh:   false,
 		TokenBody: BodyJSON,
 		Setup:     "Webflow → Workspace settings → Apps & Integrations → App Development → your App → Data Client → Redirect URI and scopes",
+	},
+	{
+		Name:         "bangumi",
+		Title:        "Bangumi",
+		AuthorizeURL: "https://bgm.tv/oauth/authorize",
+		TokenURL:     "https://bgm.tv/oauth/access_token",
+		PKCE:         false,
+		Refresh:      true,
+		// Bangumi wants the app's callback with a refresh too.
+		RefreshRedirectURI: true,
+		Setup:              "bgm.tv/dev/app → your app → callback URL",
+	},
+	{
+		Name:         "wave",
+		Title:        "Wave",
+		AuthorizeURL: "https://api.waveapps.com/oauth2/authorize/",
+		TokenURL:     "https://api.waveapps.com/oauth2/token/",
+		PKCE:         false,
+		Refresh:      true,
+		// Wave wants the sign-in's redirect URI with a refresh too.
+		RefreshRedirectURI: true,
+		Setup:              "Wave Developer Portal → Manage Applications → your application → Redirect URIs",
+	},
+	{
+		Name:         "whoop",
+		Title:        "WHOOP",
+		AuthorizeURL: "https://api.prod.whoop.com/oauth/oauth2/auth",
+		TokenURL:     "https://api.prod.whoop.com/oauth/oauth2/token",
+		PKCE:         false,
+		Refresh:      true,
+		// A refresh asks for the offline scope again, so that WHOOP's answer carries the next refresh token.
+		RefreshParams: map[string]string{"scope": "offline"},
+		Setup:         "WHOOP Developer Dashboard (developer-dashboard.whoop.com) → your app → Redirect URLs; Scopes → the scopes your extensions ask for",
+	},
+	{
+		Name:         "miro",
+		Title:        "Miro",
+		AuthorizeURL: "https://miro.com/oauth/authorize",
+		TokenURL:     "https://api.miro.com/v1/oauth/token",
+		PKCE:         false,
+		// Only an app created with expiring tokens gets refresh tokens; the others' tokens don't expire.
+		Refresh: true,
+		Setup:   "Miro → Settings → Your apps → Create new app (Expire user authorization token on) → Redirect URI; Permissions → boards:read and boards:write",
+	},
+	{
+		Name:         "tesla",
+		Title:        "Tesla",
+		AuthorizeURL: "https://auth.tesla.com/oauth2/v3/authorize",
+		// Tesla's token calls must use this host.
+		TokenURL: "https://fleet-auth.prd.vn.cloud.tesla.com/oauth2/v3/token",
+		PKCE:     true,
+		Refresh:  true,
+		// Tesla requires a Fleet API base URL as the token's audience: North America's, the one the store's Tesla
+		// extension calls.
+		CodeParams: map[string]string{"audience": "https://fleet-api.prd.na.vn.cloud.tesla.com"},
+		Setup:      "developer.tesla.com → your application → Allowed Redirect URI(s); also a hosted public key, partner registration and a payment method (Tesla's Fleet API docs)",
 	},
 }
 
