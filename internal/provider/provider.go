@@ -274,6 +274,49 @@ var Builtin = []Provider{
 		TokenBody: BodyJSON,
 		Setup:     "Webflow → Workspace settings → Apps & Integrations → App Development → your App → Data Client → Redirect URI and scopes",
 	},
+	{
+		Name:         "bangumi",
+		Title:        "Bangumi",
+		AuthorizeURL: "https://bgm.tv/oauth/authorize",
+		TokenURL:     "https://bgm.tv/oauth/access_token",
+		PKCE:         false,
+		Refresh:      true,
+		// Bangumi wants the app's callback with a refresh too.
+		RefreshRedirectURI: true,
+		Setup:              "bgm.tv/dev/app → your app → callback URL",
+	},
+	{
+		Name:         "wave",
+		Title:        "Wave",
+		AuthorizeURL: "https://api.waveapps.com/oauth2/authorize/",
+		TokenURL:     "https://api.waveapps.com/oauth2/token/",
+		PKCE:         false,
+		Refresh:      true,
+		// Wave wants the sign-in's redirect URI with a refresh too.
+		RefreshRedirectURI: true,
+		Setup:              "Wave Developer Portal → Manage Applications → your application → Redirect URIs",
+	},
+	{
+		Name:         "whoop",
+		Title:        "WHOOP",
+		AuthorizeURL: "https://api.prod.whoop.com/oauth/oauth2/auth",
+		TokenURL:     "https://api.prod.whoop.com/oauth/oauth2/token",
+		PKCE:         false,
+		Refresh:      true,
+		// A refresh asks for the offline scope again, so that WHOOP's answer carries the next refresh token.
+		RefreshParams: map[string]string{"scope": "offline"},
+		Setup:         "WHOOP Developer Dashboard (developer-dashboard.whoop.com) → your app → Redirect URLs; Scopes → the scopes your extensions ask for",
+	},
+	{
+		Name:         "miro",
+		Title:        "Miro",
+		AuthorizeURL: "https://miro.com/oauth/authorize",
+		TokenURL:     "https://api.miro.com/v1/oauth/token",
+		PKCE:         false,
+		// Only an app created with expiring tokens gets refresh tokens; the others' tokens don't expire.
+		Refresh: true,
+		Setup:   "Miro → Settings → Your apps → Create new app (Expire user authorization token on) → Redirect URI; Permissions → boards:read and boards:write",
+	},
 }
 
 // Aliases maps a deprecated path name to the provider it now stands for. They work for one release, and the
