@@ -56,6 +56,17 @@ var extensions = map[string]extension{
 	"gumroad": {scope: "view_profile view_sales"},
 	// The store's moneybird extension (moneybird/src/oauth/client.ts).
 	"moneybird": {scope: "time_entries sales_invoices settings"},
+	// The store's freeagent extension (freeagent/src/oauth.ts).
+	"freeagent": {scope: "read write"},
+	// The store's mollie-for-raycast extension (mollie-for-raycast/src/oauth.ts). It builds its token bodies itself,
+	// with the fields OAuthService sends as JSON, so exchangeFields and refreshFields are its bodies too.
+	"mollie": {scope: "organizations.read profiles.read payments.read payments.write sales-invoices.read sales-invoices.write balances.read settlements.read payment-links.read payment-links.write subscriptions.read subscriptions.write refunds.write refunds.read"},
+	// The store's plane extension (plane/src/api/auth.ts).
+	"plane": {scope: "read write"},
+	// The store's homey extension (homey/src/lib/Homey.ts) sends no scope.
+	"homey": {scope: ""},
+	// The store's figma-files extension (figma-files/src/oauth.ts), comma-separated, which Figma takes.
+	"figma": {scope: "file_content:read,file_metadata:read,file_versions:read,projects:read"},
 }
 
 var encodings = []string{"json", "url-encoded"}
