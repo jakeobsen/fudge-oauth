@@ -15,6 +15,11 @@ key_file: /run/secrets/fudge_oauth_key
 # Turn it off once sign-ins work; its log lists them at start too.
 # info_page: false
 
+# public_url/api/services lists the services' paths and titles for Fudge,
+# which names them under the chosen server. It stays on with the front page
+# off.
+# service_list: false
+
 # To serve HTTPS itself rather than behind a TLS proxy: a certificate for
 # public_url's host and its key, both PEM. A renewal is picked up within a
 # minute.

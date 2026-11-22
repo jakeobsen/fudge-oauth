@@ -202,9 +202,11 @@ func TestHealthcheck(t *testing.T) {
 }
 
 func TestTheStartLinesListTheCallbacks(t *testing.T) {
-	for _, page := range []string{"true", "false"} {
+	for _, c := range []struct{ page, list string }{{"true", "true"}, {"false", "true"}, {"true", "false"}, {"false", "false"}} {
+		page, list := c.page, c.list
 		e := relayEnv(":8080", "", "")
 		e["FUDGE_OAUTH_INFO_PAGE"] = page
+		e["FUDGE_OAUTH_SERVICE_LIST"] = list
 		e["FUDGE_OAUTH_LINEAR_CLIENT_ID"] = "id"
 		e["FUDGE_OAUTH_LINEAR_CLIENT_SECRET"] = "secret"
 		cfg, err := config.Load(e.getenv, readFile)
@@ -214,7 +216,7 @@ func TestTheStartLinesListTheCallbacks(t *testing.T) {
 		var logs bytes.Buffer
 		logStart(slog.New(slog.NewJSONHandler(&logs, nil)), cfg)
 		var services []string
-		infoPage := ""
+		infoPage, serviceList := "", ""
 		for _, line := range strings.Split(strings.TrimSpace(logs.String()), "\n") {
 			var entry map[string]any
 			if err := json.Unmarshal([]byte(line), &entry); err != nil {
@@ -222,14 +224,14 @@ func TestTheStartLinesListTheCallbacks(t *testing.T) {
 			}
 			switch entry["msg"] {
 			case "listening":
-				infoPage = fmt.Sprint(entry["info_page"])
+				infoPage, serviceList = fmt.Sprint(entry["info_page"]), fmt.Sprint(entry["service_list"])
 			case "service":
 				services = append(services, fmt.Sprint(entry["provider"], " ", entry["callback"]))
 			}
 		}
 		want := []string{"github https://oauth.example.com/github/callback", "linear https://oauth.example.com/linear/callback"}
-		if !slices.Equal(services, want) || infoPage != page {
-			t.Errorf("info_page %s: %s", page, logs.String())
+		if !slices.Equal(services, want) || infoPage != page || serviceList != list {
+			t.Errorf("info_page %s, service_list %s: %s", page, list, logs.String())
 		}
 		if strings.Contains(logs.String(), "secret") || strings.Contains(logs.String(), testKey) {
 			t.Errorf("the start lines show a secret: %s", logs.String())

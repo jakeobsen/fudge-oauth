@@ -78,6 +78,7 @@ These services, which store extensions reach through Raycast's sign-in servers, 
 4. **Configure and start it** (below). The front page, `<public_url>/`, lists the services it offers and each one's callback URL. So does its log when it starts, one line per service.
 5. **In Fudge**, open Settings → Sign-in, choose **Your own server…**, and enter `public_url`.
 6. **Once sign-ins work, turn the front page off** with `info_page: false`. `<public_url>/` then answers 404, as any unknown address does.
+   The service list for Fudge, `<public_url>/api/services`, stays on unless you also set `service_list: false`.
 
 ### The published image
 
@@ -142,6 +143,7 @@ A YAML file, whose path is in `FUDGE_OAUTH_CONFIG`, and environment variables. A
 | `tls.cert_file` | `FUDGE_OAUTH_TLS_CERT_FILE` | Optional: a PEM certificate chain for `public_url`'s host. With it and its key, fudge-oauth serves HTTPS only. |
 | `tls.key_file` | `FUDGE_OAUTH_TLS_KEY_FILE` | Its PEM private key. Set both or neither. |
 | `info_page` | `FUDGE_OAUTH_INFO_PAGE` | `true` (the default) or `false`. Whether `<public_url>/` shows the services and their callback URLs; with `false` it answers 404. |
+| `service_list` | `FUDGE_OAUTH_SERVICE_LIST` | `true` (the default) or `false`. Whether `<public_url>/api/services` lists the services for Fudge; with `false` it answers 404. It doesn't depend on `info_page`. |
 | `providers.<path>.client_id` | `FUDGE_OAUTH_<PATH>_CLIENT_ID` | The OAuth app's client ID. |
 | `providers.<path>.client_secret` / `client_secret_file` | `FUDGE_OAUTH_<PATH>_CLIENT_SECRET` / `…_CLIENT_SECRET_FILE` | Its secret. |
 | `providers.<path>.authorize_url` | `FUDGE_OAUTH_<PATH>_AUTHORIZE_URL` | Optional: another authorize endpoint, e.g. GitHub Enterprise Server's. |
@@ -162,6 +164,10 @@ fudge-oauth answers at the same paths as Raycast's sign-in servers, and Fudge se
 4. `POST /<path>/refresh-token`: refreshes a token the same way. `/token` takes a refresh too, since that's where Google, Atlassian, Zoom and Notion refresh. GitHub's OAuth apps and Webflow issue no refresh tokens, so those answer 400.
 
 Sealed values are bound to their kind and service: a state never works as a code, nor at another service's paths. A sealed state lasts 10 minutes, a sealed code 5. `GET /healthz` answers 200.
+
+`GET /api/services` tells Fudge which services this server offers, so Settings → Sign-in can name them under the chosen server.
+It answers JSON with each service's path and title, in the order of the Services table, and nothing else: `{"services":[{"id":"github","title":"GitHub"},{"id":"atlassian","title":"Atlassian (Jira, Confluence)"}]}`.
+It stays on when the front page is off, and `service_list: false` turns it off.
 
 Anyone holding a refresh token can refresh it through fudge-oauth, as with any OAuth proxy; rate limiting, if you want it, belongs in the proxy in front.
 

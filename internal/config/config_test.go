@@ -191,6 +191,8 @@ func TestRefused(t *testing.T) {
 		{"a TLS key without its certificate", with(map[string]string{"FUDGE_OAUTH_TLS_KEY_FILE": "/tls/key.pem"}), nil, "tls: cert_file and key_file go together"},
 		{"an info_page that isn't true or false", with(map[string]string{"FUDGE_OAUTH_INFO_PAGE": "off"}), nil, `FUDGE_OAUTH_INFO_PAGE: "off" isn't true or false`},
 		{"an info_page in the file that isn't a boolean", with(map[string]string{"FUDGE_OAUTH_CONFIG": "/c.yaml"}), map[string]string{"/c.yaml": "info_page: hidden\n"}, "cannot unmarshal !!str `hidden` into bool"},
+		{"a service_list that isn't true or false", with(map[string]string{"FUDGE_OAUTH_SERVICE_LIST": "off"}), nil, `FUDGE_OAUTH_SERVICE_LIST: "off" isn't true or false`},
+		{"a service_list in the file that isn't a boolean", with(map[string]string{"FUDGE_OAUTH_CONFIG": "/c.yaml"}), map[string]string{"/c.yaml": "service_list: hidden\n"}, "cannot unmarshal !!str `hidden` into bool"},
 		{"an unknown TLS field", with(map[string]string{"FUDGE_OAUTH_CONFIG": "/c.yaml"}), map[string]string{"/c.yaml": "tls:\n  certfile: /c.pem\n"}, "certfile"},
 	}
 	for _, c := range cases {
@@ -293,6 +295,50 @@ func TestInfoPage(t *testing.T) {
 			}
 			if cfg.HideInfoPage != c.hide {
 				t.Errorf("HideInfoPage = %v, want %v", cfg.HideInfoPage, c.hide)
+			}
+		})
+	}
+}
+
+func TestServiceList(t *testing.T) {
+	base := func(extra map[string]string) map[string]string {
+		m := map[string]string{
+			"FUDGE_OAUTH_PUBLIC_URL":           "https://oauth.example.com",
+			"FUDGE_OAUTH_KEY":                  testKey,
+			"FUDGE_OAUTH_GITHUB_CLIENT_ID":     "id",
+			"FUDGE_OAUTH_GITHUB_CLIENT_SECRET": "secret",
+		}
+		for k, v := range extra {
+			m[k] = v
+		}
+		return m
+	}
+	file := map[string]string{"FUDGE_OAUTH_CONFIG": "/c.yaml"}
+	// Each case checks both switches, so the list's being off leaves the front page on, and the reverse.
+	cases := []struct {
+		name               string
+		vars               map[string]string
+		files              map[string]string
+		hideList, hidePage bool
+	}{
+		{"on by default", base(nil), nil, false, false},
+		{"off from the environment", base(map[string]string{"FUDGE_OAUTH_SERVICE_LIST": "false"}), nil, true, false},
+		{"on from the environment", base(map[string]string{"FUDGE_OAUTH_SERVICE_LIST": "true"}), nil, false, false},
+		{"off from the file", base(file), map[string]string{"/c.yaml": "service_list: false\n"}, true, false},
+		{"on from the file", base(file), map[string]string{"/c.yaml": "service_list: true\n"}, false, false},
+		{"the environment overrides the file", base(map[string]string{"FUDGE_OAUTH_CONFIG": "/c.yaml", "FUDGE_OAUTH_SERVICE_LIST": "true"}), map[string]string{"/c.yaml": "service_list: false\n"}, false, false},
+		{"the front page off leaves it on", base(file), map[string]string{"/c.yaml": "info_page: false\n"}, false, true},
+		{"the front page off from the environment leaves it on", base(map[string]string{"FUDGE_OAUTH_INFO_PAGE": "false"}), nil, false, true},
+		{"both off", base(file), map[string]string{"/c.yaml": "info_page: false\nservice_list: false\n"}, true, true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			cfg, err := load(t, c.vars, c.files)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if cfg.HideServiceList != c.hideList || cfg.HideInfoPage != c.hidePage {
+				t.Errorf("HideServiceList = %v, HideInfoPage = %v; want %v, %v", cfg.HideServiceList, cfg.HideInfoPage, c.hideList, c.hidePage)
 			}
 		})
 	}

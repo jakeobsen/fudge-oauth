@@ -85,6 +85,10 @@ func (s *Server) Handler() http.Handler {
 		// Without it, GET / answers as any unknown path does.
 		mux.HandleFunc("GET /{$}", s.index)
 	}
+	if !s.cfg.HideServiceList {
+		// Without it, GET /api/services answers as any unknown path does. The front page's switch doesn't touch it.
+		mux.HandleFunc("GET /api/services", s.services)
+	}
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		_, _ = w.Write([]byte("ok\n"))
@@ -106,6 +110,22 @@ func secured(next http.Handler) http.Handler {
 		h.Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'")
 		next.ServeHTTP(w, r)
 	})
+}
+
+// services lists the configured services for Fudge, which names the ones it knows under the chosen server: each
+// one's path as its id, and its title, in the front page's order. Nothing else goes in.
+func (s *Server) services(w http.ResponseWriter, _ *http.Request) {
+	type service struct {
+		ID    string `json:"id"`
+		Title string `json:"title"`
+	}
+	list := struct {
+		Services []service `json:"services"`
+	}{Services: []service{}}
+	for _, name := range s.cfg.Names() {
+		list.Services = append(list.Services, service{ID: name, Title: s.cfg.Providers[name].Title})
+	}
+	writeJSON(w, http.StatusOK, list)
 }
 
 // --- authorize ---
