@@ -67,6 +67,15 @@ var extensions = map[string]extension{
 	"homey": {scope: ""},
 	// The store's figma-files extension (figma-files/src/oauth.ts), comma-separated, which Figma takes.
 	"figma": {scope: "file_content:read,file_metadata:read,file_versions:read,projects:read"},
+	// The store's 42-api extension (42-api/src/lib/auth.ts).
+	"intra42": {scope: "public profile"},
+	// The store's ticktick-plus extension (ticktick-plus/src/api/oauth.ts).
+	"ticktick": {scope: "tasks:read tasks:write"},
+	// The store's zoho-mail extension (zoho-mail/src/oauth.ts): space-separated, though Zoho documents commas,
+	// and access_type=offline for a refresh token. It sends no prompt.
+	"zoho": {scope: "ZohoMail.accounts.READ ZohoMail.folders.READ ZohoMail.messages.READ ZohoMail.messages.UPDATE ZohoMail.organization.accounts.READ ZohoMail.organization.domains.READ ZohoMail.partner.organization.READ", extras: map[string]string{"access_type": "offline"}},
+	// The store's webflow-sites extension (webflow-sites/src/oauth.ts).
+	"webflow": {scope: "sites:read assets:read"},
 }
 
 var encodings = []string{"json", "url-encoded"}
@@ -289,20 +298,52 @@ func TestSignInWithEveryProvider(t *testing.T) {
 }
 
 func TestRefreshWithoutRefreshTokens(t *testing.T) {
-	h := newHarness(t, "github")
-	for _, enc := range encodings {
-		status, body := h.post(t, "/github/refresh-token", enc, refreshFields("anything"))
-		if status != http.StatusBadRequest || body["error"] != "unsupported_grant_type" {
-			t.Fatalf("%s: %d %v", enc, status, body)
-		}
-		if desc, _ := body["error_description"].(string); !strings.Contains(desc, "GitHub doesn't issue refresh tokens") {
-			t.Fatalf("%s: %q", enc, desc)
+	h := newHarness(t, "github", "webflow")
+	for _, p := range []struct{ name, says string }{
+		{"github", "GitHub doesn't issue refresh tokens"},
+		{"webflow", "Webflow doesn't issue refresh tokens"},
+	} {
+		for _, enc := range encodings {
+			status, body := h.post(t, "/"+p.name+"/refresh-token", enc, refreshFields("anything"))
+			if status != http.StatusBadRequest || body["error"] != "unsupported_grant_type" {
+				t.Fatalf("%s %s: %d %v", p.name, enc, status, body)
+			}
+			if desc, _ := body["error_description"].(string); !strings.Contains(desc, p.says) {
+				t.Fatalf("%s %s: %q", p.name, enc, desc)
+			}
 		}
 	}
 	status, body := h.post(t, "/linear/refresh-token", "json", refreshFields("x"))
 	if status != http.StatusNotFound {
 		t.Fatalf("an unconfigured provider: %d %v", status, body)
 	}
+}
+
+func TestZohoGetsPromptConsentOnce(t *testing.T) {
+	h := newHarness(t, "zoho", "github")
+	authorize := func(name string, change func(url.Values)) url.Values {
+		t.Helper()
+		si := h.newSignIn(t)
+		return location(t, h.get(t, h.authorizeURL(name, si, change))).Query()
+	}
+
+	// The zoho-mail extension sends access_type=offline and no prompt: the relay adds prompt=consent, so a
+	// user's every sign-in through the relay's one app gets a refresh token, not only their first.
+	q := authorize("zoho", nil)
+	if !slices.Equal(q["prompt"], []string{"consent"}) || !slices.Equal(q["access_type"], []string{"offline"}) {
+		t.Errorf("prompt %q access_type %q, want consent and offline once each", q["prompt"], q["access_type"])
+	}
+	// An extension that sends its own prompt keeps it, once.
+	q = authorize("zoho", func(q url.Values) { q.Set("prompt", "login") })
+	if !slices.Equal(q["prompt"], []string{"login"}) {
+		t.Errorf("prompt %q, want the extension's own, once", q["prompt"])
+	}
+	// Nobody else gets it.
+	q = authorize("github", nil)
+	if q.Has("prompt") {
+		t.Errorf("github got Zoho's prompt: %v", q)
+	}
+	h.checkLogs(t)
 }
 
 func TestLoopbackRedirect(t *testing.T) {

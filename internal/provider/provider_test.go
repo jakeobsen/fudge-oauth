@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"maps"
 	"net/url"
 	"slices"
 	"testing"
@@ -11,9 +12,10 @@ func TestBuiltin(t *testing.T) {
 		"github", "linear", "slack", "asana", "google", "atlassian", "zoom",
 		"notion", "todoist", "basecamp", "gumroad", "moneybird",
 		"freeagent", "mollie", "plane", "homey", "figma",
+		"intra42", "ticktick", "zoho", "webflow",
 	}
 	if got := Names(); !slices.Equal(got, want) {
-		t.Fatalf("Names() = %v, want OAuthService's seven, then the ten behind Raycast's other sign-in servers: %v", got, want)
+		t.Fatalf("Names() = %v, want OAuthService's seven, then the fourteen behind Raycast's other sign-in servers: %v", got, want)
 	}
 	for _, p := range Builtin {
 		for _, raw := range []string{p.AuthorizeURL, p.TokenURL} {
@@ -57,7 +59,7 @@ func TestDirectProvidersMatchOAuthService(t *testing.T) {
 	}
 }
 
-// The ten services store extensions reach through Raycast's other sign-in
+// The fourteen services store extensions reach through Raycast's other sign-in
 // servers (FUD-166), as each service documents them.
 func TestServicesBehindRaycastsOtherSignInServers(t *testing.T) {
 	for _, want := range []Provider{
@@ -140,6 +142,45 @@ func TestServicesBehindRaycastsOtherSignInServers(t *testing.T) {
 			TokenURL: "https://api.figma.com/v1/oauth/token", PKCE: true, Refresh: true,
 			ClientAuth: ClientAuthBasic, TokenBody: BodyForm,
 		},
+		// 42's own guides need a 42 login, so the URLs come from an unofficial public copy
+		// of them, last updated in 2021: credentials as parameters, a form body (its code
+		// exchange is multipart, its other example form-encoded), no PKCE mentioned.
+		// Refresh is inferred: no public 42 page documents it, but the extension sets a
+		// refresh URL, and third-party code refreshes at the token URL.
+		{
+			Name: "intra42", AuthorizeURL: "https://api.intra.42.fr/oauth/authorize",
+			TokenURL: "https://api.intra.42.fr/oauth/token", PKCE: false, Refresh: true,
+			ClientAuth: ClientAuthBody, TokenBody: BodyForm,
+		},
+		// https://developer.ticktick.com/docs/openapi.md: HTTP Basic, a form body, no PKCE.
+		// It documents only the code grant, so refresh is inferred: the extension's author
+		// writes that TickTick's refresh-token grant is unreliable.
+		{
+			Name: "ticktick", AuthorizeURL: "https://ticktick.com/oauth/authorize",
+			TokenURL: "https://ticktick.com/oauth/token", PKCE: false, Refresh: true,
+			ClientAuth: ClientAuthBasic, TokenBody: BodyForm,
+		},
+		// https://www.zoho.com/developer/oauth/web-server-apps/get-access-token.html and
+		// https://www.zoho.com/developer/oauth/web-server-apps/refresh-access-token.html,
+		// at the US data center: credentials as parameters, refresh tokens, no PKCE for
+		// server-based apps. The code exchange's form body is Zoho's own CRM SDK's
+		// (zoho/zohocrm-python-sdk-8.0). prompt=consent, since otherwise Zoho gives a
+		// refresh token only at a user's first consent.
+		{
+			Name: "zoho", AuthorizeURL: "https://accounts.zoho.com/oauth/v2/auth",
+			TokenURL: "https://accounts.zoho.com/oauth/v2/token", PKCE: false, Refresh: true,
+			ClientAuth: ClientAuthBody, TokenBody: BodyForm,
+			AuthorizeDefaults: map[string]string{"prompt": "consent"},
+		},
+		// https://developers.webflow.com/data/reference/oauth-app.md: credentials in the
+		// body, no refresh tokens, no PKCE. The JSON body with grant_type is its EU hosting
+		// page's (https://developers.webflow.com/data/reference/eu-hosting.md) and its
+		// SDK's (webflow-api 3.3.4, the version the extension locks).
+		{
+			Name: "webflow", AuthorizeURL: "https://webflow.com/oauth/authorize",
+			TokenURL: "https://api.webflow.com/oauth/access_token", PKCE: false, Refresh: false,
+			ClientAuth: ClientAuthBody, TokenBody: BodyJSON,
+		},
 	} {
 		got, ok := Lookup(want.Name)
 		if !ok {
@@ -150,15 +191,15 @@ func TestServicesBehindRaycastsOtherSignInServers(t *testing.T) {
 			got.Refresh != want.Refresh || got.ClientAuth != want.ClientAuth || got.TokenBody != want.TokenBody {
 			t.Errorf("%s: %+v, want %+v", want.Name, got, want)
 		}
-		if len(got.AuthorizeDefaults) != 0 {
-			t.Errorf("%s: AuthorizeDefaults %v, want none", want.Name, got.AuthorizeDefaults)
+		if !maps.Equal(got.AuthorizeDefaults, want.AuthorizeDefaults) {
+			t.Errorf("%s: AuthorizeDefaults %v, want %v", want.Name, got.AuthorizeDefaults, want.AuthorizeDefaults)
 		}
 	}
 }
 
-func TestOnlyGitHubLacksRefresh(t *testing.T) {
+func TestOnlyGitHubAndWebflowLackRefresh(t *testing.T) {
 	for _, p := range Builtin {
-		if p.Refresh == (p.Name == "github") {
+		if p.Refresh == (p.Name == "github" || p.Name == "webflow") {
 			t.Errorf("%s: Refresh = %v", p.Name, p.Refresh)
 		}
 	}
