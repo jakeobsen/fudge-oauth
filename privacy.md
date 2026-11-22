@@ -4,38 +4,43 @@ title: Privacy policy
 
 # Privacy policy for Fudge's relay
 
-This policy covers the fudge-oauth relay at https://fudge-oauth.rackofpain.net/, which jakeobsen runs for Fudge.
+This policy covers the fudge-oauth relay that Fudge uses, at https://fudge-oauth.rackofpain.net/.
 It doesn't cover any other fudge-oauth relay, such as one you run yourself.
 
 Last updated: 2026-11-22.
 
 ## What the relay does
 
-Fudge signs in to services such as GitHub and Atlassian through the relay, because a service's client secret can't ship inside an app.
-During a sign-in, your browser passes through the relay on its way to the service and on its way back.
-Fudge then sends the relay the one-time code from the service, and the relay exchanges it with the service and passes your tokens back to Fudge.
-Refreshing a token works the same way.
+The relay lets Fudge sign you in to third-party services, such as GitHub and Atlassian, without the app holding those services' secrets.
+It takes part in the sign-in and in refreshing your access, and passes the result back to Fudge.
 
-## What the relay keeps
+## What we collect
 
-Nothing but its log (below).
-It has no database, no cookies and no sessions.
-Codes and tokens pass through it only while it answers the request.
-What a sign-in needs between its steps travels encrypted inside the sign-in itself, and expires within 10 minutes.
+We don't create accounts, use cookies or keep a database.
+Sign-in codes and access tokens pass through the relay only while a request is being handled.
+They are never stored, and our logs are set up to leave them out.
 
-## What the relay logs
+Like most online services, the relay and the infrastructure in front of it keep technical logs to run the service, keep it secure and fix problems.
+These may include your IP address, the time of a request, the page requested (without its parameters), browser details and whether the request succeeded.
 
-One line per request: the path without its query, the service, the status, the time and how long it took.
-When a service refuses a request or can't be reached, one more line with the service and the status it answered.
-When it starts, it logs its own settings: its address and the services it offers.
-It never logs a code, a token, a header or what a request contains.
-Its web server, or a proxy in front of it, may note the IP address a connection comes from, for example when a secure connection fails before a request is made.
+## Service providers
 
-## The services you sign in to
+The relay runs behind Cloudflare and our own web servers, which handle connections to it.
+Cloudflare processes connection data under its own privacy policy.
+
+## Third-party services
 
 The service you sign in to handles your account under its own privacy policy.
-The relay asks it only for the access the extension asks for.
+The relay only requests the access Fudge asks for.
+
+## How long we keep data
+
+Logs are kept only as long as needed to run and secure the service, and are then deleted.
+
+## Your rights
+
+You can ask what data we hold about you and ask us to delete it.
 
 ## Questions
 
-Open an issue at https://github.com/jakeobsen/fudge-oauth/issues.
+Open an issue on [GitHub](https://github.com/jakeobsen/fudge-oauth/issues).
